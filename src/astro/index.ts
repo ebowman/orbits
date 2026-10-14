@@ -5,3 +5,7 @@ export * from './time';
 export * from './frames';
 export * from './sidereal';
 export * from './horizon';
+export * from './elements';
+export * from './kepler';
+export * from './state';
+export * from './propagate';
