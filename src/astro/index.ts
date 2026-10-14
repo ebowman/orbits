@@ -14,3 +14,4 @@ export * from './observer';
 export * from './ephemeris';
 export * from './magnitude';
 export * from './catalog';
+export * from './iod';
