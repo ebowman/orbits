@@ -13,14 +13,36 @@ describe('horizons fixtures', () => {
       expect(files).toContain(`${b}-568.json`);
     }
     expect(files).toContain('earth.json');
+    for (const b of ['ceres', 'vesta', 'eros']) {
+      expect(files).toContain(`${b}-opposition-geocentric.json`);
+      expect(files).toContain(`${b}-opposition-568.json`);
+      expect(files).toContain(`${b}-opposition-elements.json`);
+    }
   });
 
-  for (const f of files.filter((x) => x !== 'earth.json')) {
+  for (const f of files.filter((x) => x.endsWith('-opposition-elements.json'))) {
+    it(`${f} has osculating elements for both triplets`, () => {
+      const j = load(f);
+      expect(typeof j.purpose).toBe('string');
+      expect(j.rows.map((r: { spacingDays: number }) => r.spacingDays)).toEqual([10, 5]);
+      for (const r of j.rows) {
+        for (const k of ['jdUtcMid', 'jdTdb', 'a', 'e', 'iDeg', 'OmegaDeg', 'omegaDeg', 'MDeg']) {
+          expect(Number.isFinite(r[k]), k).toBe(true);
+        }
+        expect(r.a).toBeGreaterThan(0);
+        expect(r.e).toBeGreaterThanOrEqual(0);
+        expect(r.e).toBeLessThan(1);
+      }
+    });
+  }
+
+  for (const f of files.filter((x) => x !== 'earth.json' && !x.endsWith('-elements.json'))) {
     it(`${f} observer rows are valid`, () => {
       const j = load(f);
       expect(j.timeScale).toBe('UTC');
       expect(typeof j.query).toBe('string');
       expect(j.rows.length).toBeGreaterThanOrEqual(40);
+      if (f.includes('-opposition-')) expect(typeof j.purpose).toBe('string');
       for (const r of j.rows) {
         expect(r.jdUtc).toBeGreaterThan(2400000);
         expect(r.raDeg).toBeGreaterThanOrEqual(0);

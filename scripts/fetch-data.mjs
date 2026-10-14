@@ -24,6 +24,13 @@ const FIXTURE_BODIES = [1, 4, 433];
 const SITE = '568';
 const HALF_WINDOW_DAYS = 20; // 41 daily rows centred on the SBDB epoch
 
+// Opposition windows: day 0 of each 41-row daily window (JD UTC). These are the dates of
+// maximum solar elongation within +-400 d of the SBDB epoch, found with predict() in the
+// Gauss tests (bestStart in src/astro/iod/gauss.test.ts). Triplets at days 0/10/20 and 0/5/10
+// therefore sit at/near opposition. Hard-coded so the script needs no TS toolchain.
+const OPPOSITION_START = { 1: 2461410.5, 4: 2461325.5, 433: 2460975.5 };
+const TT_MINUS_UTC_DAYS = 69.184 / 86400; // TAI-UTC 37 s + 32.184 s (valid 2017-2035 absent new leap seconds)
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function getJson(url) {
@@ -104,9 +111,9 @@ function cols(line) {
   return line.split(',').map((c) => c.trim());
 }
 
-async function observerFixture(id, name, center, centerLabel, epochJd) {
-  const start = epochJd - HALF_WINDOW_DAYS;
-  const stop = epochJd + HALF_WINDOW_DAYS;
+async function observerFixture(id, name, center, centerLabel, epochJd, range) {
+  const start = range ? range[0] : epochJd - HALF_WINDOW_DAYS;
+  const stop = range ? range[1] : epochJd + HALF_WINDOW_DAYS;
   const { url, text, lines } = await horizons({
     COMMAND: `'${id};'`,
     CENTER: `'${center}'`,
@@ -137,6 +144,37 @@ async function observerFixture(id, name, center, centerLabel, epochJd) {
     fixture.site = { latDeg: Number(m[2]), lonEastDeg: Number(m[1]), elevM: Number(m[3]) * 1000 };
   }
   return fixture;
+}
+
+// Osculating heliocentric ecliptic-J2000 elements at the middle epoch of each triplet.
+async function elementsFixture(id, name, startUtc) {
+  const out = [];
+  for (const [spacing, offset] of [[10, 10], [5, 5]]) {
+    const jdUtc = startUtc + offset;
+    const jdTt = jdUtc + TT_MINUS_UTC_DAYS;
+    const { url, lines } = await horizons({
+      COMMAND: `'${id};'`,
+      CENTER: `'500@10'`,
+      EPHEM_TYPE: 'ELEMENTS',
+      REF_PLANE: `'ECLIPTIC'`,
+      REF_SYSTEM: `'J2000'`,
+      OUT_UNITS: `'AU-D'`,
+      TLIST: `'${jdTt}'`,
+      CSV_FORMAT: `'YES'`,
+      TIME_TYPE: `'TDB'`,
+    });
+    // CSV: JDTDB, calendar, EC, QR, IN, OM, W, Tp, N, MA, TA, A, AD, PR,
+    const c = cols(lines[0]);
+    out.push({
+      spacingDays: spacing,
+      jdUtcMid: jdUtc,
+      jdTdb: num(c[0], 'jd'),
+      e: num(c[2], 'ec'), iDeg: num(c[4], 'in'), OmegaDeg: num(c[5], 'om'),
+      omegaDeg: num(c[6], 'w'), MDeg: num(c[9], 'ma'), a: num(c[11], 'a'),
+      query: url,
+    });
+  }
+  return { body: name, id: String(id), center: '500@10', frame: 'ecliptic J2000', timeScale: 'TDB', purpose: 'Osculating elements at triplet middle epochs for real-data IOD validation', rows: out };
 }
 
 async function earthFixture() {
@@ -183,6 +221,19 @@ async function main() {
     fixtures.push([`${slug}-geocentric.json`, await observerFixture(id, b.name, '500@399', '500@399', b.epochJdTt)]);
     console.log(`Horizons ${slug} site ${SITE}`);
     fixtures.push([`${slug}-${SITE}.json`, await observerFixture(id, b.name, `${SITE}@399`, `${SITE}@399`, b.epochJdTt)]);
+  }
+  for (const id of FIXTURE_BODIES) {
+    const b = catalog.find((c) => c.id === String(id));
+    const slug = b.name.toLowerCase();
+    const start = OPPOSITION_START[id];
+    const range = [start, start + 40];
+    const purpose = 'Opposition window (41 daily rows from day 0 = max solar elongation start) for real-data IOD validation';
+    console.log(`Horizons ${slug} opposition geocentric`);
+    fixtures.push([`${slug}-opposition-geocentric.json`, { ...(await observerFixture(id, b.name, '500@399', '500@399', start, range)), purpose }]);
+    console.log(`Horizons ${slug} opposition site ${SITE}`);
+    fixtures.push([`${slug}-opposition-${SITE}.json`, { ...(await observerFixture(id, b.name, `${SITE}@399`, `${SITE}@399`, start, range)), purpose }]);
+    console.log(`Horizons ${slug} opposition elements`);
+    fixtures.push([`${slug}-opposition-elements.json`, await elementsFixture(id, b.name, start)]);
   }
   console.log('Horizons earth vectors');
   fixtures.push(['earth.json', await earthFixture()]);
