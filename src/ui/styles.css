@@ -30,3 +30,13 @@ button { background: var(--panel); color: var(--fg); border: 1px solid var(--bor
   .nav-links { display: none; flex-direction: column; flex-basis: 100%; order: 3; }
   .nav-links.open { display: flex; }
 }
+
+/* Solve page */
+.solve-table { border-collapse: collapse; margin: 0.5rem 0 1rem; }
+.solve-table th, .solve-table td { border: 1px solid var(--border); padding: 0.25rem 0.5rem; text-align: right; vertical-align: top; }
+.solve-table th:first-child, .solve-table td:first-child { text-align: left; }
+.solve-err { display: block; font-size: 0.8em; }
+.sev-good { color: #2e9e4f; }
+.sev-warn { color: #d9a000; }
+.sev-bad { color: #d64545; }
+.ambiguous-banner { border: 2px solid #d9a000; padding: 0.5rem 0.75rem; font-weight: 700; margin: 1rem 0; }

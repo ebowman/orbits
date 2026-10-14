@@ -1,0 +1,101 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
+import * as astro from '@astro';
+import SolvePage from './pages/SolvePage';
+import { useStore } from './store';
+
+vi.hoisted(() => {
+  const m = new Map<string, string>();
+  const mem = {
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, String(v)),
+    removeItem: (k: string) => void m.delete(k),
+    clear: () => m.clear(),
+    key: (i: number) => [...m.keys()][i] ?? null,
+    get length() {
+      return m.size;
+    },
+  };
+  Object.defineProperty(globalThis, 'localStorage', { value: mem, configurable: true });
+});
+
+vi.mock('@astro', async (orig) => {
+  const mod = await orig<typeof import('@astro')>();
+  return { ...mod, gauss: vi.fn(mod.gauss) };
+});
+
+const initial = useStore.getState();
+beforeEach(() => {
+  localStorage.clear();
+  useStore.setState({ ...initial, sites: [], observationSets: [], selectedSiteId: null, activeSetId: null });
+});
+afterEach(() => {
+  cleanup();
+  vi.mocked(astro.gauss).mockClear();
+});
+
+const body = (id: string) => loadCatalog().find((c) => c.id === id)!.body as OrbitalElements;
+function synth(id: string, start: number): IODInput {
+  const el = body(id);
+  return [0, 10, 20].map((d) => {
+    const p = predict(el, start + d, null);
+    return { jdUtc: start + d, raRad: p.raRad, decRad: p.decRad, site: null };
+  }) as IODInput;
+}
+function mount(observations: IODInput | [], targetId?: string) {
+  const id = useStore.getState().addSet({ name: 'S', observations, ...(targetId ? { targetId } : {}) });
+  useStore.getState().setActiveSet(id);
+  render(
+    <MemoryRouter>
+      <SolvePage />
+    </MemoryRouter>,
+  );
+}
+const num = (testId: string) => parseFloat(screen.getByTestId(testId).textContent!.replace(/[^0-9eE+.-]/g, ''));
+
+describe('SolvePage', () => {
+  it('noiseless Ceres: Gauss a error is tiny', () => {
+    mount(synth('1', 2461410.5), '1');
+    expect(num('pct-gauss-a')).toBeLessThan(1e-4);
+    expect(screen.queryByTestId('ambiguous-banner')).toBeNull();
+    expect(screen.getByText(/no perturbations/)).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Residuals' })).toBeTruthy();
+    expect(screen.getByTestId('fwd-gauss-7').textContent).toContain('arcmin');
+  });
+
+  it('no target: no error cells', () => {
+    mount(synth('1', 2461410.5));
+    expect(screen.queryByTestId('pct-gauss-a')).toBeNull();
+    expect(screen.getByTestId('cell-gauss-a').textContent).toMatch(/\d/);
+  });
+
+  it('incomplete set shows only the message and link', () => {
+    mount([]);
+    expect(screen.getByTestId('incomplete').textContent).toContain('Incomplete set — enter 3 valid observations on the Observe page');
+    expect(screen.getByRole('link', { name: 'Observe page' })).toBeTruthy();
+    expect(screen.queryByRole('table', { name: 'Elements' })).toBeNull();
+  });
+
+  it('a Gauss failure shows in its column while Laplace columns render', () => {
+    vi.mocked(astro.gauss).mockImplementationOnce(() => {
+      throw new Error('boom from gauss');
+    });
+    mount(synth('1', 2461410.5), '1');
+    expect(within(screen.getByTestId('cell-gauss-a')).getByRole('alert').textContent).toBe('boom from gauss');
+    expect(screen.getByTestId('cell-laplaceRefined-a').textContent).toMatch(/\d\.\d/);
+    expect(screen.getByTestId('cell-laplaceClassical-a').textContent).toMatch(/\d\.\d/);
+  });
+
+  it('multi-root Eros: banner, candidates, and use this root changes a', () => {
+    mount(synth('433', 2460975.5 + 90), '433');
+    expect(screen.getByTestId('ambiguous-banner').textContent).toContain('Ambiguous: 2 physically valid solutions');
+    expect(screen.getByRole('table', { name: 'Candidate roots' })).toBeTruthy();
+    const before = screen.getByTestId('cell-gauss-a').textContent;
+    fireEvent.click(screen.getAllByRole('button', { name: 'use this root' })[0]!);
+    expect(screen.getByTestId('cell-gauss-a').textContent).not.toBe(before);
+    expect(num('pct-gauss-a')).toBeLessThan(1e-3);
+  });
+});
