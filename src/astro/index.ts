@@ -11,3 +11,6 @@ export * from './state';
 export * from './propagate';
 export * from './planets';
 export * from './observer';
+export * from './ephemeris';
+export * from './magnitude';
+export * from './catalog';
