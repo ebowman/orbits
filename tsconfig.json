@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@astro/*": ["./src/astro/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@data/*": ["./src/data/*"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts", "eslint.config.js"]
+}

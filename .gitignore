@@ -4,3 +4,8 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Node / Vite
+node_modules/
+dist/
+coverage/
