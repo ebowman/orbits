@@ -14,6 +14,10 @@ export default tseslint.config(
     rules: { ...reactHooks.configs.recommended.rules },
   },
   {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ['src/astro/**'],
     rules: {
       'no-restricted-imports': [
