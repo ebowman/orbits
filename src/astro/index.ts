@@ -16,3 +16,4 @@ export * from './magnitude';
 export * from './catalog';
 export * from './iod';
 export * from './random';
+export * from './visibility';
