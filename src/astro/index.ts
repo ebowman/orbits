@@ -9,3 +9,5 @@ export * from './elements';
 export * from './kepler';
 export * from './state';
 export * from './propagate';
+export * from './planets';
+export * from './observer';
