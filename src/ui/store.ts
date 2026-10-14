@@ -4,11 +4,16 @@ import type { Observation } from '@astro/iod/types';
 import type { Site } from '@astro/observer';
 
 export type NamedSite = Site & { id: string; name: string };
+/** Raw input text for one fixed observation slot. siteKey: site id, 'geocenter', or 'stored:<lat>,<lon>,<elev>'. */
+export type RowDraft = { utc: string; ra: string; dec: string; siteKey: string };
+
 export type ObservationSet = {
   id: string;
   name: string;
   targetId?: string;
   synthetic?: boolean;
+  /** Raw per-slot input text; observations is [] unless all 3 slots are valid. */
+  drafts?: [RowDraft, RowDraft, RowDraft];
   observations: Observation[];
 };
 
@@ -133,6 +138,18 @@ export function importSet(json: string): string {
   if (raw.synthetic !== undefined && typeof raw.synthetic !== 'boolean') {
     throw new Error('Import failed: set.synthetic must be a boolean.');
   }
+  let drafts: [RowDraft, RowDraft, RowDraft] | undefined;
+  if (raw.drafts !== undefined) {
+    const bad = () => new Error('Import failed: set.drafts must be an array of 3 objects with string utc, ra, dec, siteKey.');
+    if (!Array.isArray(raw.drafts) || raw.drafts.length !== 3) throw bad();
+    const ds = raw.drafts.map((d: unknown) => {
+      if (!isObj(d)) throw bad();
+      const { utc, ra, dec, siteKey } = d;
+      if (typeof utc !== 'string' || typeof ra !== 'string' || typeof dec !== 'string' || typeof siteKey !== 'string') throw bad();
+      return { utc, ra, dec, siteKey };
+    });
+    drafts = ds as [RowDraft, RowDraft, RowDraft];
+  }
   if (!Array.isArray(raw.observations)) {
     throw new Error('Import failed: set.observations must be an array.');
   }
@@ -157,5 +174,6 @@ export function importSet(json: string): string {
   const set: Omit<ObservationSet, 'id'> = { name: raw.name, observations };
   if (raw.targetId !== undefined) set.targetId = raw.targetId;
   if (raw.synthetic !== undefined) set.synthetic = raw.synthetic;
+  if (drafts) set.drafts = drafts;
   return useStore.getState().addSet(set);
 }

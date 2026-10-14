@@ -13,6 +13,7 @@
     "resolveJsonModule": true,
     "types": ["vite/client"],
     "paths": {
+      "@astro": ["./src/astro/index.ts"],
       "@astro/*": ["./src/astro/*"],
       "@ui/*": ["./src/ui/*"],
       "@data/*": ["./src/data/*"]
