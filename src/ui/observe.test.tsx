@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { loadCatalog, predict } from '@astro';
-import ObservePage, { parseUtcInput } from './pages/ObservePage';
+import ObservePage, { jdToUtcInput, parseUtcInput } from './pages/ObservePage';
 import { importSet, useStore } from './store';
 
 vi.hoisted(() => {
@@ -184,6 +184,44 @@ describe('ObservePage', () => {
       });
       expect(set.observations).toHaveLength(3);
     });
+  });
+
+  it('preserves sub-second time precision', () => {
+    const jd = parseUtcInput('2026-01-01T03:04:05.250');
+    const whole = parseUtcInput('2026-01-01T03:04:05');
+    expect(Math.abs(jd - (whole + 0.25 / 86400))).toBeLessThan(1e-8);
+    expect(jdToUtcInput(jd)).toBe('2026-01-01T03:04:05.250');
+    expect(jdToUtcInput(whole)).toBe('2026-01-01T03:04:05');
+    expect(Math.abs(parseUtcInput(jdToUtcInput(jd)) - jd)).toBeLessThan(1e-8);
+    for (const t of ['2026-01-01T03:04:05.001', '2026-01-01T23:59:59.999', '2026-03-05T00:00:00.5']) {
+      expect(Math.abs(parseUtcInput(jdToUtcInput(parseUtcInput(t))) - parseUtcInput(t))).toBeLessThan(1e-8);
+    }
+    expect(() => parseUtcInput('2026-01-01T03:04:60.5')).toThrow();
+  });
+
+  it('observations stay valid after their site is removed', () => {
+    const sid = useStore.getState().addSite({ name: 'Home', latDeg: 52.5, lonEastDeg: -6.25, elevM: 40 });
+    const id = setup();
+    const rows = [
+      ['2026-01-01T00:00:00.250', '12 34 56', '+10 00 00'],
+      ['2026-01-08T00:00', '12 40 00', '+10 30 00'],
+      ['2026-01-15T00:00', '12 50 00', '+11 00 00'],
+    ] as const;
+    rows.forEach((r, i) => {
+      fill(i + 1, r[0], r[1], r[2]);
+      fireEvent.change(field(i + 1, 'Site ' + (i + 1)), { target: { value: sid } });
+    });
+    expect(obsOf(id)).toHaveLength(3);
+    useStore.getState().removeSite(sid);
+    remount();
+    expect(field(1, 'Site 1').value).toBe('stored:52.5,-6.25,40');
+    const o = obsOf(id);
+    expect(o).toHaveLength(3);
+    expect(o[0]!.site).toEqual({ latDeg: 52.5, lonEastDeg: -6.25, elevM: 40 });
+    fill(1, rows[0][0], rows[0][1], rows[0][2]);
+    expect(obsOf(id)).toHaveLength(3);
+    expect(obsOf(id)[0]!.site).toEqual({ latDeg: 52.5, lonEastDeg: -6.25, elevM: 40 });
+    expect(solve().disabled).toBe(false);
   });
 
   it('rejects impossible dates, accepts leap day', () => {

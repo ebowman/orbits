@@ -98,7 +98,7 @@ export default function PlanPage() {
     const st = useStore.getState();
     const iso = `${plan.nights[0]!.date.year}-${pad(plan.nights[0]!.date.month)}-${pad(plan.nights[0]!.date.day)}`;
     const drafts = plan.nights.map((n) => ({
-      utc: n.best ? jdToUtcInput(n.best.jd) : '',
+      utc: n.best ? jdToUtcInput(n.best.jd, false) : '',
       ra: '',
       dec: '',
       siteKey: site.id,
@@ -158,7 +158,7 @@ export default function PlanPage() {
               <tr key={r.id} data-testid="plan-row">
                 <td>{r.name}</td>
                 <td>{r.vis.maxAltDeg.toFixed(1)}°</td>
-                <td>{jdToUtcInput(r.vis.jdMaxAlt).replace('T', ' ')}</td>
+                <td>{jdToUtcInput(r.vis.jdMaxAlt, false).replace('T', ' ')}</td>
                 <td>{formatRA(r.vis.raRad, 1)}</td>
                 <td>{formatDec(r.vis.decRad, 0)}</td>
                 <td>{r.vis.v === null ? 'approx n/a' : r.vis.v.toFixed(1)}</td>
@@ -202,7 +202,7 @@ export default function PlanPage() {
           <li key={i}>
             {n.date.year}-{pad(n.date.month)}-{pad(n.date.day)}:{' '}
             {n.best
-              ? `${jdToUtcInput(n.best.jd).replace('T', ' ')} UTC, alt ${n.best.altDeg.toFixed(0)}°, RA ${formatRA(n.best.raRad, 1)}, Dec ${formatDec(n.best.decRad, 0)}`
+              ? `${jdToUtcInput(n.best.jd, false).replace('T', ' ')} UTC, alt ${n.best.altDeg.toFixed(0)}°, RA ${formatRA(n.best.raRad, 1)}, Dec ${formatDec(n.best.decRad, 0)}`
               : 'not observable'}
           </li>
         ))}

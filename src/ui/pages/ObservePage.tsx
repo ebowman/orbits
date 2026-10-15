@@ -21,23 +21,28 @@ const ARCSEC = Math.PI / (180 * 3600);
 
 /** Parse a datetime-local value ("YYYY-MM-DDTHH:MM[:SS]") as UTC; returns JD(UTC). Throws on bad input. */
 export function parseUtcInput(value: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(value.trim());
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?$/.exec(value.trim());
   if (!m) throw new Error('Enter a date and time (UTC).');
   const [y, mo, d, h, mi, s] = [m[1], m[2], m[3], m[4], m[5], m[6] ?? '0'].map(Number) as [
     number, number, number, number, number, number,
   ];
+  const frac = m[7] ? Number(m[7]) : 0; // fractional seconds, kept exactly
   const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
   const dim = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
   if (mo < 1 || mo > 12 || d < 1 || d > (dim ?? 31) || h > 23 || mi > 59 || s > 59) {
     throw new Error('Date or time out of range (check the day of the month).');
   }
-  return calendarToJd(y, mo, d, h, mi, s);
+  return calendarToJd(y, mo, d, h, mi, s + frac);
 }
 
-/** Format JD(UTC) as a datetime-local value, rounded to the nearest second. */
-export function jdToUtcInput(jd: number): string {
-  const c = jdToCalendar(jd + 0.5 / 86400);
-  return `${pad(c.year, 4)}-${pad(c.month)}-${pad(c.day)}T${pad(c.hour)}:${pad(c.minute)}:${pad(Math.floor(c.second))}`;
+/** Format JD(UTC) as a datetime-local value, rounded to the nearest millisecond (".mmm" omitted when zero),
+ * or to the nearest whole second when withMs is false (planning display). */
+export function jdToUtcInput(jd: number, withMs = true): string {
+  const c = jdToCalendar(jd + (withMs ? 0.5 / 86400000 : 0.5 / 86400));
+  const ms = withMs ? Math.floor(c.second * 1000) : Math.floor(c.second) * 1000;
+  const whole = Math.floor(ms / 1000);
+  const frac = ms - whole * 1000;
+  return `${pad(c.year, 4)}-${pad(c.month)}-${pad(c.day)}T${pad(c.hour)}:${pad(c.minute)}:${pad(whole)}${frac ? `.${pad(frac, 3)}` : ''}`;
 }
 
 const sameSite = (a: Site | null, b: Site | null) =>

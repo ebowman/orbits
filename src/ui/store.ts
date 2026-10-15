@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Observation } from '@astro/iod/types';
 import type { Site } from '@astro/observer';
 
@@ -47,6 +47,44 @@ type Actions = {
   toggleNightMode: () => void;
 };
 
+/** localStorage wrapper that never throws (quota, private mode, blocked); falls back to memory. */
+const memStore = new Map<string, string>();
+let warned = false;
+const warnOnce = (e: unknown) => {
+  if (warned) return;
+  warned = true;
+  console.warn('orbits: localStorage unavailable; keeping data in memory only.', e);
+};
+export const safeStorage = {
+  getItem: (k: string): string | null => {
+    try {
+      const v = globalThis.localStorage.getItem(k);
+      return v ?? memStore.get(k) ?? null;
+    } catch (e) {
+      warnOnce(e);
+      return memStore.get(k) ?? null;
+    }
+  },
+  setItem: (k: string, v: string): void => {
+    memStore.set(k, v);
+    try {
+      globalThis.localStorage.setItem(k, v);
+    } catch (e) {
+      warnOnce(e);
+    }
+  },
+  removeItem: (k: string): void => {
+    memStore.delete(k);
+    try {
+      globalThis.localStorage.removeItem(k);
+    } catch (e) {
+      warnOnce(e);
+    }
+  },
+};
+
+const storedKeyOf = (s: Site) => `stored:${s.latDeg},${s.lonEastDeg},${s.elevM}`;
+
 export const useStore = create<State & Actions>()(
   persist(
     (set) => ({
@@ -63,10 +101,23 @@ export const useStore = create<State & Actions>()(
       updateSite: (id, patch) =>
         set((s) => ({ sites: s.sites.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       removeSite: (id) =>
-        set((s) => ({
-          sites: s.sites.filter((x) => x.id !== id),
-          selectedSiteId: s.selectedSiteId === id ? null : s.selectedSiteId,
-        })),
+        set((s) => {
+          const gone = s.sites.find((x) => x.id === id);
+          // Drafts referencing the removed site keep its coordinates via a 'stored:' key.
+          const fix = (d: RowDraft): RowDraft =>
+            gone && d.siteKey === id ? { ...d, siteKey: storedKeyOf(gone) } : d;
+          return {
+            sites: s.sites.filter((x) => x.id !== id),
+            selectedSiteId: s.selectedSiteId === id ? null : s.selectedSiteId,
+            observationSets: s.observationSets.map((o) => {
+              if (!gone || !(o.drafts?.some((d) => d.siteKey === id) || o.checkDraft?.siteKey === id)) return o;
+              const n: ObservationSet = { ...o };
+              if (o.drafts) n.drafts = o.drafts.map(fix) as [RowDraft, RowDraft, RowDraft];
+              if (o.checkDraft) n.checkDraft = fix(o.checkDraft);
+              return n;
+            }),
+          };
+        }),
       selectSite: (id) => set({ selectedSiteId: id }),
       addSet: (setData) => {
         const id = newId();
@@ -87,6 +138,7 @@ export const useStore = create<State & Actions>()(
     }),
     {
       name: 'orbits-v1',
+      storage: createJSONStorage(() => safeStorage),
       partialize: (s) => ({
         sites: s.sites,
         selectedSiteId: s.selectedSiteId,
@@ -185,6 +237,12 @@ export function importSet(json: string): string {
   const observations: Observation[] = raw.observations.map((o: unknown, i: number) =>
     parseObs(o, `Import failed: observation ${i + 1}`),
   );
+  if (raw.observations.length !== 0 && raw.observations.length !== 3) {
+    throw new Error(`Import failed: set.observations must have 0 or 3 entries (got ${raw.observations.length}).`);
+  }
+  if (drafts && raw.observations.length === 3 && drafts.length !== 3) {
+    throw new Error('Import failed: set.drafts must have 3 entries when observations are present.');
+  }
   const set: Omit<ObservationSet, 'id'> = { name: raw.name, observations };
   if (raw.targetId !== undefined) set.targetId = raw.targetId;
   if (raw.synthetic !== undefined) set.synthetic = raw.synthetic;
