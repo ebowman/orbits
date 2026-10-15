@@ -1,0 +1,256 @@
+{
+  "body": "Vesta",
+  "id": "4",
+  "center": "500@399",
+  "timeScale": "UTC",
+  "rows": [
+    {
+      "jdUtc": 2461325.5,
+      "raDeg": 22.82928,
+      "decDeg": -3.24941,
+      "deltaAu": 1.4815176193322
+    },
+    {
+      "jdUtc": 2461326.5,
+      "raDeg": 22.58997,
+      "decDeg": -3.33702,
+      "deltaAu": 1.48241532473032
+    },
+    {
+      "jdUtc": 2461327.5,
+      "raDeg": 22.35008,
+      "decDeg": -3.42239,
+      "deltaAu": 1.48358589570973
+    },
+    {
+      "jdUtc": 2461328.5,
+      "raDeg": 22.10994,
+      "decDeg": -3.50543,
+      "deltaAu": 1.48502924233301
+    },
+    {
+      "jdUtc": 2461329.5,
+      "raDeg": 21.86985,
+      "decDeg": -3.586,
+      "deltaAu": 1.48674503680272
+    },
+    {
+      "jdUtc": 2461330.5,
+      "raDeg": 21.63012,
+      "decDeg": -3.66402,
+      "deltaAu": 1.48873272587194
+    },
+    {
+      "jdUtc": 2461331.5,
+      "raDeg": 21.39107,
+      "decDeg": -3.73936,
+      "deltaAu": 1.49099154123399
+    },
+    {
+      "jdUtc": 2461332.5,
+      "raDeg": 21.15299,
+      "decDeg": -3.81195,
+      "deltaAu": 1.49352050835501
+    },
+    {
+      "jdUtc": 2461333.5,
+      "raDeg": 20.91619,
+      "decDeg": -3.88169,
+      "deltaAu": 1.496318454835
+    },
+    {
+      "jdUtc": 2461334.5,
+      "raDeg": 20.68095,
+      "decDeg": -3.94849,
+      "deltaAu": 1.49938401980523
+    },
+    {
+      "jdUtc": 2461335.5,
+      "raDeg": 20.44756,
+      "decDeg": -4.01228,
+      "deltaAu": 1.50271566609882
+    },
+    {
+      "jdUtc": 2461336.5,
+      "raDeg": 20.21631,
+      "decDeg": -4.07299,
+      "deltaAu": 1.50631169686991
+    },
+    {
+      "jdUtc": 2461337.5,
+      "raDeg": 19.98746,
+      "decDeg": -4.13055,
+      "deltaAu": 1.51017027775161
+    },
+    {
+      "jdUtc": 2461338.5,
+      "raDeg": 19.76128,
+      "decDeg": -4.18489,
+      "deltaAu": 1.51428946424413
+    },
+    {
+      "jdUtc": 2461339.5,
+      "raDeg": 19.53802,
+      "decDeg": -4.23597,
+      "deltaAu": 1.51866723172876
+    },
+    {
+      "jdUtc": 2461340.5,
+      "raDeg": 19.31792,
+      "decDeg": -4.28373,
+      "deltaAu": 1.52330150285947
+    },
+    {
+      "jdUtc": 2461341.5,
+      "raDeg": 19.10122,
+      "decDeg": -4.32812,
+      "deltaAu": 1.52819016546635
+    },
+    {
+      "jdUtc": 2461342.5,
+      "raDeg": 18.88816,
+      "decDeg": -4.36912,
+      "deltaAu": 1.53333107512478
+    },
+    {
+      "jdUtc": 2461343.5,
+      "raDeg": 18.67896,
+      "decDeg": -4.40666,
+      "deltaAu": 1.53872204062881
+    },
+    {
+      "jdUtc": 2461344.5,
+      "raDeg": 18.47383,
+      "decDeg": -4.44073,
+      "deltaAu": 1.54436079602373
+    },
+    {
+      "jdUtc": 2461345.5,
+      "raDeg": 18.27301,
+      "decDeg": -4.47127,
+      "deltaAu": 1.55024496665773
+    },
+    {
+      "jdUtc": 2461346.5,
+      "raDeg": 18.0767,
+      "decDeg": -4.49827,
+      "deltaAu": 1.55637203707514
+    },
+    {
+      "jdUtc": 2461347.5,
+      "raDeg": 17.8851,
+      "decDeg": -4.5217,
+      "deltaAu": 1.56273932606979
+    },
+    {
+      "jdUtc": 2461348.5,
+      "raDeg": 17.69842,
+      "decDeg": -4.54153,
+      "deltaAu": 1.56934397088937
+    },
+    {
+      "jdUtc": 2461349.5,
+      "raDeg": 17.51685,
+      "decDeg": -4.55774,
+      "deltaAu": 1.57618292015219
+    },
+    {
+      "jdUtc": 2461350.5,
+      "raDeg": 17.34058,
+      "decDeg": -4.57033,
+      "deltaAu": 1.58325293402668
+    },
+    {
+      "jdUtc": 2461351.5,
+      "raDeg": 17.16977,
+      "decDeg": -4.57928,
+      "deltaAu": 1.59055059023124
+    },
+    {
+      "jdUtc": 2461352.5,
+      "raDeg": 17.0046,
+      "decDeg": -4.58459,
+      "deltaAu": 1.59807229476971
+    },
+    {
+      "jdUtc": 2461353.5,
+      "raDeg": 16.84522,
+      "decDeg": -4.58626,
+      "deltaAu": 1.60581429654692
+    },
+    {
+      "jdUtc": 2461354.5,
+      "raDeg": 16.69176,
+      "decDeg": -4.5843,
+      "deltaAu": 1.61377270495345
+    },
+    {
+      "jdUtc": 2461355.5,
+      "raDeg": 16.54438,
+      "decDeg": -4.57873,
+      "deltaAu": 1.6219435092789
+    },
+    {
+      "jdUtc": 2461356.5,
+      "raDeg": 16.40317,
+      "decDeg": -4.56957,
+      "deltaAu": 1.63032259862906
+    },
+    {
+      "jdUtc": 2461357.5,
+      "raDeg": 16.26826,
+      "decDeg": -4.55682,
+      "deltaAu": 1.638905781068
+    },
+    {
+      "jdUtc": 2461358.5,
+      "raDeg": 16.13974,
+      "decDeg": -4.54053,
+      "deltaAu": 1.64768880102753
+    },
+    {
+      "jdUtc": 2461359.5,
+      "raDeg": 16.01769,
+      "decDeg": -4.52071,
+      "deltaAu": 1.6566673545514
+    },
+    {
+      "jdUtc": 2461360.5,
+      "raDeg": 15.90219,
+      "decDeg": -4.49741,
+      "deltaAu": 1.66583710253793
+    },
+    {
+      "jdUtc": 2461361.5,
+      "raDeg": 15.79331,
+      "decDeg": -4.47067,
+      "deltaAu": 1.67519368270281
+    },
+    {
+      "jdUtc": 2461362.5,
+      "raDeg": 15.6911,
+      "decDeg": -4.44051,
+      "deltaAu": 1.68473272144169
+    },
+    {
+      "jdUtc": 2461363.5,
+      "raDeg": 15.5956,
+      "decDeg": -4.40699,
+      "deltaAu": 1.69444984708927
+    },
+    {
+      "jdUtc": 2461364.5,
+      "raDeg": 15.50685,
+      "decDeg": -4.37015,
+      "deltaAu": 1.70434070615931
+    },
+    {
+      "jdUtc": 2461365.5,
+      "raDeg": 15.42487,
+      "decDeg": -4.33003,
+      "deltaAu": 1.71440098380695
+    }
+  ],
+  "query": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='4%3B'&CENTER='500%40399'&EPHEM_TYPE=OBSERVER&START_TIME='JD%202461325.5'&STOP_TIME='JD%202461365.5'&STEP_SIZE='1%20d'&QUANTITIES='1%2C20'&ANG_FORMAT='DEG'&CSV_FORMAT='YES'&TIME_TYPE='UT'&CAL_FORMAT='JD'",
+  "purpose": "Opposition window (41 daily rows from day 0 = max solar elongation start) for real-data IOD validation"
+}

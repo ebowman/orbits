@@ -1,0 +1,34 @@
+{
+  "body": "Ceres",
+  "id": "1",
+  "center": "500@10",
+  "frame": "ecliptic J2000",
+  "timeScale": "TDB",
+  "purpose": "Osculating elements at triplet middle epochs for real-data IOD validation",
+  "rows": [
+    {
+      "spacingDays": 10,
+      "jdUtcMid": 2461420.5,
+      "jdTdb": 2461420.500800741,
+      "e": 0.07993115493874965,
+      "iDeg": 10.58583552263875,
+      "OmegaDeg": 80.24636217867662,
+      "omegaDeg": 73.04034911519288,
+      "MDeg": 321.8151540605065,
+      "a": 2.766789812263962,
+      "query": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='1%3B'&CENTER='500%4010'&EPHEM_TYPE=ELEMENTS&REF_PLANE='ECLIPTIC'&REF_SYSTEM='J2000'&OUT_UNITS='AU-D'&TLIST='2461420.500800741'&CSV_FORMAT='YES'&TIME_TYPE='TDB'"
+    },
+    {
+      "spacingDays": 5,
+      "jdUtcMid": 2461415.5,
+      "jdTdb": 2461415.500800741,
+      "e": 0.07992283697901503,
+      "iDeg": 10.58592411954532,
+      "OmegaDeg": 80.24661994293187,
+      "omegaDeg": 73.0472258027578,
+      "MDeg": 320.7373959415676,
+      "a": 2.766752296240994,
+      "query": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='1%3B'&CENTER='500%4010'&EPHEM_TYPE=ELEMENTS&REF_PLANE='ECLIPTIC'&REF_SYSTEM='J2000'&OUT_UNITS='AU-D'&TLIST='2461415.500800741'&CSV_FORMAT='YES'&TIME_TYPE='TDB'"
+    }
+  ]
+}

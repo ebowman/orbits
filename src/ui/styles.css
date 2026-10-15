@@ -1,0 +1,51 @@
+:root {
+  --bg: #0b0e14;
+  --panel: #151a23;
+  --fg: #e3e8ef;
+  --muted: #8b95a5;
+  --accent: #5aa9ff;
+  --border: #263041;
+}
+:root[data-night='red'] {
+  --bg: #000000;
+  --panel: #140000;
+  --fg: #ff3b30;
+  --muted: #8a1c16;
+  --accent: #cc2a20;
+  --border: #4a0b08;
+}
+html, body, #root { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+button { background: var(--panel); color: var(--fg); border: 1px solid var(--border); padding: 0.4rem 0.7rem; border-radius: 4px; cursor: pointer; }
+.app-header { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.brand { font-weight: 700; }
+.nav-menu-button { display: none; }
+.nav-links { display: flex; gap: 1rem; flex: 1; }
+.nav-links a { text-decoration: none; color: var(--muted); }
+.nav-links a.active { color: var(--fg); font-weight: 600; }
+.app-main { padding: 1rem; max-width: 70rem; margin: 0 auto; }
+@media (max-width: 639px) {
+  .nav-menu-button { display: inline-block; }
+  .nav-links { display: none; flex-direction: column; flex-basis: 100%; order: 3; }
+  .nav-links.open { display: flex; }
+}
+
+/* Solve page */
+.solve-table { border-collapse: collapse; margin: 0.5rem 0 1rem; }
+.solve-table th, .solve-table td { border: 1px solid var(--border); padding: 0.25rem 0.5rem; text-align: right; vertical-align: top; }
+.solve-table th:first-child, .solve-table td:first-child { text-align: left; }
+.solve-err { display: block; font-size: 0.8em; }
+.sev-good { color: #2e9e4f; }
+.sev-warn { color: #d9a000; }
+.sev-bad { color: #d64545; }
+.ambiguous-banner { border: 2px solid #d9a000; padding: 0.5rem 0.75rem; font-weight: 700; margin: 1rem 0; }
+
+/* Learn walkthroughs */
+.walk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.walk-nav { display: flex; gap: 0.5rem; align-items: center; }
+.walk-nav input[type='range'] { flex: 1; }
+.walk-values td { text-align: left; word-break: break-all; font-family: monospace; font-size: 0.85em; }
+.walk-plot { width: 100%; max-width: 28rem; height: auto; background: transparent; }
+@media (max-width: 799px) { .walk-grid { grid-template-columns: 1fr; } }

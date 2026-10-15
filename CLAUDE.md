@@ -60,13 +60,16 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+npm install          # install deps
+npm run dev          # Vite dev server
+npm run build        # tsc --noEmit && vite build
+npm test             # vitest run (node env; use // @vitest-environment jsdom per file)
+npm run test:watch   # vitest watch
+npm run lint         # eslint (src/astro may not import react/three/@react-three/@ui)
+npm run typecheck    # tsc --noEmit
 ```
+
 
 ## Architecture Overview
 
