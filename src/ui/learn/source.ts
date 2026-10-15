@@ -1,13 +1,10 @@
 /** Shared data-source and trace helpers for the Learn walkthrough pages. */
 import { useState } from 'react';
 import {
-  dot,
+  bestElongationStart,
   loadCatalog,
   predict,
-  radecToUnit,
-  scale,
   stateToElements,
-  unit,
   type IODInput,
   type Observation,
   type OrbitalElements,
@@ -23,28 +20,13 @@ export function findBody(id: string | undefined): { name: string; el: OrbitalEle
   return { name: e.name, el: e.body as OrbitalElements };
 }
 
-/** Start date within +-400 d of the catalog epoch that maximises elongation (5-day scan). */
-function bestStart(el: OrbitalElements): number {
-  let best = el.epochJd;
-  let bestEl = -1;
-  for (let d = -400; d <= 400; d += 5) {
-    const p = predict(el, el.epochJd + d, null);
-    const e = Math.acos(dot(radecToUnit(p.raRad, p.decRad), unit(scale(p.rObserver, -1))));
-    if (e > bestEl) {
-      bestEl = e;
-      best = el.epochJd + d;
-    }
-  }
-  return best;
-}
-
 let cachedExample: IODInput | null = null;
 /** Noise-free Ceres observations 10 d apart, starting near maximum elongation (not at the epoch). */
 export function ceresExample(): IODInput {
   if (cachedExample) return cachedExample;
   const ceres = findBody('1');
   if (!ceres) throw new Error('Catalog is missing Ceres');
-  const start = bestStart(ceres.el);
+  const start = bestElongationStart(ceres.el);
   cachedExample = [0, 10, 20].map((d): Observation => {
     const p = predict(ceres.el, start + d, null);
     return { jdUtc: start + d, raRad: p.raRad, decRad: p.decRad, site: null, label: `Ceres day ${d}` };
