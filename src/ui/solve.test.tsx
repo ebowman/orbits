@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
 import * as astro from '@astro';
 import SolvePage from './pages/SolvePage';
+import { lsqDisagrees } from './solve/compute';
 import { useStore } from './store';
 
 vi.hoisted(() => {
@@ -24,7 +25,7 @@ vi.hoisted(() => {
 
 vi.mock('@astro', async (orig) => {
   const mod = await orig<typeof import('@astro')>();
-  return { ...mod, gauss: vi.fn(mod.gauss) };
+  return { ...mod, gauss: vi.fn(mod.gauss), differentialCorrection: vi.fn(mod.differentialCorrection) };
 });
 
 const initial = useStore.getState();
@@ -35,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.mocked(astro.gauss).mockClear();
+  vi.mocked(astro.differentialCorrection).mockReset();
 });
 
 const body = (id: string) => loadCatalog().find((c) => c.id === id)!.body as OrbitalElements;
@@ -129,9 +131,59 @@ describe('SolvePage', () => {
       expect(parseFloat(txt)).toBeLessThan(60);
     });
 
+    it('LSQ column labels the check residual as in fit (not validation)', () => {
+      mountWithCheck('1', 2461410.5, 30, '1');
+      const cell = screen.getByTestId('check-resid-lsq');
+      expect(cell.textContent).toContain('(in fit)');
+      expect(cell.getAttribute('title')).toMatch(/not an independent validation/);
+    });
+
+    // Fake the LSQ RMS per run (in survivor order) to exercise the tie rule regardless of which root the check favours.
+    function lsqWithRms(rms: number[]) {
+      let call = 0;
+      const real = vi.mocked(astro.differentialCorrection).getMockImplementation()!;
+      vi.mocked(astro.differentialCorrection).mockImplementation((o, i, opts) => {
+        const fit = real(o, i, opts);
+        return { ...fit, converged: true, rmsArcsec: rms[call++ % rms.length]! };
+      });
+    }
+
+    it('LSQ RMS tie (within 1%) shows no disagreement banner, in either run order', () => {
+      for (const order of [[0.5, 0.503], [0.503, 0.5]]) {
+        lsqWithRms(order);
+        mountWithCheck('433', 2460975.5 + 90, 30, '433');
+        expect(screen.queryByTestId('lsq-disagreement')).toBeNull();
+        cleanup();
+      }
+    });
+
+    it('clearly different LSQ RMS across roots shows the disagreement banner for one run order', () => {
+      let shown = 0;
+      for (const order of [[0.5, 5], [5, 0.5]]) {
+        lsqWithRms(order);
+        mountWithCheck('433', 2460975.5 + 90, 30, '433');
+        if (screen.queryByTestId('lsq-disagreement')) shown++;
+        cleanup();
+      }
+      expect(shown).toBe(1);
+    });
+
     it('without a check obs the ambiguous banner carries the hint', () => {
       mount(synth('433', 2460975.5 + 90), '433');
       expect(screen.getByTestId('ambiguous-banner').textContent).toContain('Add a 4th check observation on Observe to resolve this.');
     });
+  });
+});
+
+describe('lsqDisagrees absolute tie branch', () => {
+  const run = (rootIndex: number, rms: number) =>
+    ({ rootIndex, r2: 1, selected: false, fit: { rmsArcsec: rms, converged: true } as never, error: null });
+  it('treats RMS within 1e-3 arcsec as a tie even when the relative gap exceeds 1%', () => {
+    const runs = [run(0, 0.0005), run(1, 0.0013)];
+    expect(lsqDisagrees(runs, { rootIndex: 0 }, runs[1]!)).toBe(false);
+  });
+  it('reports disagreement when both the absolute and relative gaps are large', () => {
+    const runs = [run(0, 0.5), run(1, 0.9)];
+    expect(lsqDisagrees(runs, { rootIndex: 0 }, runs[1]!)).toBe(true);
   });
 });

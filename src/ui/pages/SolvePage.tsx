@@ -13,6 +13,7 @@ import {
   checkResidualRad,
   commonEpoch,
   formatCheckResidual,
+  lsqDisagrees,
   elementError,
   elementValues,
   forwardPredictions,
@@ -139,7 +140,7 @@ export default function SolvePage() {
     let lsqValues: Record<ElementKey, number> | null = null;
     let lsqFwd = null;
     let lsqCheck: number | null = null;
-    let lsqErr: string | null = lsq ? (lsq.error ?? (lsq.fit && !lsqEl ? 'Final state could not be converted to elements' : null)) : 'No Gauss/Laplace seed available';
+    let lsqErr: string | null = lsq ? (lsq.error ?? (lsq.fit && !lsqEl ? 'Final state could not be converted to elements' : null)) : 'No Gauss seed available';
     if (lsqEl) {
       try {
         lsqValues = elementValues(propagateElements(lsqEl, jd));
@@ -391,7 +392,7 @@ export default function SolvePage() {
               })}
             </tbody>
           </table>
-          {check && best && lsqBest && lsqBest.rootIndex !== best.rootIndex && (
+          {check && best && lsqBest && lsqDisagrees(lsqRuns, best, lsqBest) && (
             <div role="alert" className="ambiguous-banner" data-testid="lsq-disagreement">
               Disagreement: the check-observation residual favours the root with r2 = {best.r2.toFixed(4)} AU, but least squares over all{' '}
               {analysis.lsqObsCount} observations fits best (RMS {lsqBest.fit!.rmsArcsec.toFixed(3)} arcsec) from the root with r2 ={' '}
@@ -444,8 +445,15 @@ export default function SolvePage() {
             <tr>
               <td>Check obs residual</td>
               {view.cols.map((c) => (
-                <td key={c.id} data-testid={`check-resid-${c.id}`}>
+                <td
+                  key={c.id}
+                  data-testid={`check-resid-${c.id}`}
+                  {...(c.id === LSQ_ID
+                    ? { className: 'muted', title: 'In fit: the check observation is included in the least-squares fit, so this residual is not an independent validation.' }
+                    : {})}
+                >
                   {formatCheckResidual(c.checkRes)}
+                  {c.id === LSQ_ID && c.checkRes !== null ? ' (in fit)' : ''}
                 </td>
               ))}
             </tr>

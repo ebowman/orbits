@@ -1,9 +1,33 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { differentialCorrection } from './lsq';
 import { gauss } from './gauss';
 import type { IODInput, Observation } from './types';
 import { loadCatalog } from '../catalog';
 import { predict, type EphemerisBody } from '../ephemeris';
+
+// Pathological-state hook: when set, predictFromState throws for any state displaced from `anchor`
+// in more than one component (Jacobian axis-aligned probes still work, step-halving probes all fail).
+const hook = vi.hoisted(() => ({ anchor: null as number[] | null, worse: false }));
+vi.mock('../ephemeris', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../ephemeris')>();
+  return {
+    ...mod,
+    predictFromState: ((r: number[], v: number[], ...rest: unknown[]) => {
+      if (hook.anchor) {
+        const x = [...r, ...v];
+        const diff = x.filter((q, k) => q !== hook.anchor![k]).length;
+        if (diff > 1) {
+          if (!hook.worse) throw new Error('pathological');
+          // Stall mock: every multi-component displacement predicts a position 1 rad off, so the cost
+          // always gets worse while the (axis-aligned) Jacobian still promises a large reduction.
+          const p = (mod.predictFromState as (...a: unknown[]) => { raRad: number })(r, v, ...rest);
+          return { ...p, raRad: p.raRad + 1 };
+        }
+      }
+      return (mod.predictFromState as (...a: unknown[]) => unknown)(r, v, ...rest);
+    }) as typeof mod.predictFromState,
+  };
+});
 import type { OrbitalElements } from '../elements';
 import { elementsToState, stateToElements } from '../state';
 import { dot, scale, unit } from '../vec';
@@ -71,6 +95,7 @@ const BODIES = [
   { name: 'vesta', id: '4' },
   { name: 'eros', id: '433' },
 ];
+const SEEDS = 100;
 const med = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 
 describe('differentialCorrection', () => {
@@ -97,24 +122,89 @@ describe('differentialCorrection', () => {
       expect(fit.covariance).toHaveLength(6);
     });
 
-    it(`${b.name}: 1 arcsec noise, median |a err| of LSQ(4 obs, +40 d) vs Gauss(3 obs) over 20 seeds`, () => {
+    it(`${b.name}: 1 arcsec noise, median |a err| of LSQ(4 obs, +40 d) vs Gauss(3 obs) over ${SEEDS} seeds`, () => {
       const el = elementsOf(b.id);
       const start = bestStart(el);
       const gErr: number[] = [];
       const lErr: number[] = [];
-      for (let seed = 1; seed <= 20; seed++) {
+      for (let seed = 1; seed <= SEEDS; seed++) {
         const obs = synth(el, start, [0, 10, 20, 40], SITE, gaussianNoise(ARCSEC, seed));
         const { g, init } = seedOf(obs.slice(0, 3));
         const fit = differentialCorrection(obs, init);
         gErr.push(Math.abs(g.elements.a - el.a) / el.a);
         lErr.push(Math.abs(fit.elements!.a - el.a) / el.a);
       }
-      console.info(`LSQ ${b.name} noisy median a rel err: Gauss ${med(gErr).toExponential(2)} LSQ(4) ${med(lErr).toExponential(2)}`);
-      // Ceres at this geometry is the exception: 20 seeds show no gain from one extra night (a is weakly
-      // constrained along a near-degenerate direction; 6 obs do improve it), so only guard against a regression there.
-      expect(med(lErr)).toBeLessThan(med(gErr) * (b.name === 'ceres' ? 1.5 : 1));
+      console.log(`LSQ ${b.name} noisy median a rel err (${SEEDS} seeds): Gauss ${med(gErr).toExponential(2)} LSQ(4) ${med(lErr).toExponential(2)}`);
+      // Ceres: the extra night helps only modestly (a is weakly constrained at this geometry), but strictly.
+      expect(med(lErr)).toBeLessThan(med(gErr));
     });
   }
+
+  it('Ceres seed 80, 1 arcsec noise, 0/10/20/30 d: converges (default tolerance above numerical floor)', () => {
+    const el = elementsOf('1');
+    const obs = synth(el, bestStart(el), [0, 10, 20, 30], SITE, gaussianNoise(ARCSEC, 80));
+    const { init } = seedOf(obs.slice(0, 3));
+    const fit = differentialCorrection(obs, init);
+    console.info(`LSQ ceres seed80: iters ${fit.iterations} rms ${fit.rmsArcsec.toFixed(3)}" converged ${fit.converged}`);
+    expect(fit.converged).toBe(true);
+    expect(fit.iterations).toBeLessThan(20);
+  });
+
+  it('step halving failure reports converged=false with a warning and never throws', () => {
+    const el = elementsOf('1');
+    const obs = synth(el, bestStart(el), [0, 10, 20, 30], SITE);
+    const { init } = seedOf(obs.slice(0, 3));
+    const bad = { r: scale(init.r, 1.3) as typeof init.r, v: init.v, jdTt: init.jdTt };
+    hook.anchor = [...bad.r, ...bad.v];
+    try {
+      const fit = differentialCorrection(obs, bad);
+      expect(fit.converged).toBe(false);
+      expect(fit.warnings.some((w) => /Step halving failed/.test(w))).toBe(true);
+    } finally {
+      hook.anchor = null;
+    }
+  });
+
+  it('stall far from the minimum (halving exhausted, predicted reduction large) is not converged', () => {
+    const el = elementsOf('1');
+    const obs = synth(el, bestStart(el), [0, 10, 20, 30], SITE);
+    const { init } = seedOf(obs.slice(0, 3));
+    const bad = { r: scale(init.r, 1.3) as typeof init.r, v: init.v, jdTt: init.jdTt };
+    hook.anchor = [...bad.r, ...bad.v];
+    hook.worse = true;
+    try {
+      const fit = differentialCorrection(obs, bad);
+      expect(fit.converged).toBe(false);
+      expect(fit.warnings.some((w) => /Step halving failed/.test(w))).toBe(true);
+    } finally {
+      hook.anchor = null;
+      hook.worse = false;
+    }
+  });
+
+  it('Ceres seeds 57 and 74 (1 arcsec noise, 0/10/20/30 d) converge at their known RMS', () => {
+    const el = elementsOf('1');
+    const start = bestStart(el);
+    for (const [seed, rms] of [[57, 0.3457], [74, 0.1443]] as const) {
+      const obs = synth(el, start, [0, 10, 20, 30], SITE, gaussianNoise(ARCSEC, seed));
+      const fit = differentialCorrection(obs, seedOf(obs.slice(0, 3)).init);
+      expect(fit.converged, `seed ${seed}`).toBe(true);
+      expect(Math.abs(fit.rmsArcsec - rms)).toBeLessThan(1e-3);
+    }
+  });
+
+  it('Ceres seeds 1-100 (1 arcsec noise, 0/10/20/30 d): no non-converged runs', () => {
+    const el = elementsOf('1');
+    const start = bestStart(el);
+    const bad: number[] = [];
+    for (let seed = 1; seed <= 100; seed++) {
+      const obs = synth(el, start, [0, 10, 20, 30], SITE, gaussianNoise(ARCSEC, seed));
+      const fit = differentialCorrection(obs, seedOf(obs.slice(0, 3)).init);
+      if (!fit.converged) bad.push(seed);
+    }
+    console.info(`LSQ ceres non-converged seeds: ${JSON.stringify(bad)}`);
+    expect(bad).toEqual([]);
+  });
 
   it('exactly 3 obs: converges with rms ~ 0 and agrees with Gauss', () => {
     const el = elementsOf('1');

@@ -300,3 +300,16 @@ export function lowestRmsRun(runs: LsqRun[]): LsqRun | null {
   }
   return best;
 }
+
+/**
+ * True when the check-favoured root and the least-squares-best root differ AND their LSQ RMS values are
+ * not a tie (within 1% relative or 1e-3 arcsec absolute).
+ */
+export function lsqDisagrees(runs: LsqRun[], best: { rootIndex: number } | null, lsqBest: LsqRun | null): boolean {
+  if (!best || !lsqBest || lsqBest.rootIndex === best.rootIndex || !lsqBest.fit) return false;
+  const other = runs.find((r) => r.rootIndex === best.rootIndex)?.fit;
+  if (!other || !Number.isFinite(other.rmsArcsec)) return true;
+  const a = lsqBest.fit.rmsArcsec;
+  const b = other.rmsArcsec;
+  return !(Math.abs(a - b) <= 1e-3 || Math.abs(a - b) <= 0.01 * Math.max(a, b));
+}

@@ -27,7 +27,7 @@ export type LsqInitial = { r: Vec3; v: Vec3; jdTt: number };
 export type LsqOptions = {
   /** Maximum Gauss-Newton iterations (default 20). */
   maxIter?: number;
-  /** Convergence: largest relative parameter step (default 1e-10). */
+  /** Convergence: largest relative parameter step (default 1e-8; also stops on relative chi2 change < 1e-8). */
   tol?: number;
   /** Per-observation weights (default all 1); applied to both RA and Dec of that observation. */
   weights?: number[];
@@ -129,7 +129,7 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
   const x0 = [...initial.r, ...initial.v];
   if (!x0.every(Number.isFinite) || !Number.isFinite(initial.jdTt)) throw new Error('differentialCorrection: non-finite initial state');
   const maxIter = opts.maxIter ?? 20;
-  const tol = opts.tol ?? 1e-10;
+  const tol = opts.tol ?? 1e-8;
   const w = opts.weights ?? obs.map(() => 1);
   if (w.length !== obs.length || !w.every((q) => Number.isFinite(q) && q > 0)) {
     throw new Error('differentialCorrection: weights must be positive and one per observation');
@@ -149,6 +149,7 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
     warnings.push('Initial state could not be evaluated (non-finite or failing prediction); no correction attempted.');
   } else {
     let c = cost(res, w);
+    let stalls = 0;
     for (let it = 0; it < maxIter; it++) {
       iterations = it + 1;
       const J = jacobian(obs, x, jdTt, scales);
@@ -188,18 +189,36 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
         }
         lambda /= 2;
       }
-      const relStep = Math.max(...y.map((q) => Math.abs(q * lambda)));
+      // Convergence criterion (all based on the FULL Gauss-Newton step y, never a lambda-scaled one).
+      // Linearised predicted chi2 reduction of the full step: pred = y . g = ||W^1/2 J dx||^2 (>= 0).
+      // Converged if ANY of:
+      //  1. an accepted full step (lambda = 1) changed chi2 by a relative amount < 1e-8;
+      //  2. pred < 1e-4 * chi2 + N * (1e-4 arcsec in rad)^2, i.e. no meaningful improvement remains;
+      //  3. the full-step relative size max|y| < tol.
+      // Not converged: halving exhausted while pred is NOT small (stall away from the minimum).
+      // The noise-floor stop (2 stalled iterations) counts as converged only when pred is also small.
+      const relFull = Math.max(...y.map((q) => Math.abs(q)));
+      const pred = y.reduce((sum, q, k) => sum + q * g[k]!, 0);
+      const predSmall = Number.isFinite(pred) && pred < 1e-4 * c + N * (1e-4 / ARCSEC) ** 2;
       if (!accepted) {
-        // No decrease possible: at the cost floor (numerical noise) if the full step was already tiny.
-        if (relStep < 1e-6 || Math.sqrt(c / (2 * N)) * ARCSEC < 1e-6) converged = true;
+        if (predSmall || relFull < tol) converged = true;
         else warnings.push('Step halving failed to reduce the residuals; stopping.');
         break;
       }
+      const relChi = c > 0 ? (c - accepted.c) / c : 0;
+      const fullStep = lambda === 1;
       x = accepted.x;
       res = accepted.res;
       c = accepted.c;
-      if (relStep < tol) {
+      if ((fullStep && relChi < 1e-8) || predSmall || relFull < tol) {
         converged = true;
+        break;
+      }
+      // Noise floor: chi2 no longer decreasing for 2 consecutive iterations.
+      stalls = relChi < 1e-8 ? stalls + 1 : 0;
+      if (stalls >= 2 && predSmall) {
+        converged = true;
+        warnings.push('Stopped at the numerical noise floor (chi2 no longer decreasing).');
         break;
       }
     }
