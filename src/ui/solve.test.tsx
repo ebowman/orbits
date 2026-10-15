@@ -5,7 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
 import * as astro from '@astro';
 import SolvePage from './pages/SolvePage';
-import { lsqDisagrees } from './solve/compute';
+import { angleSeverity, elementError, epochSource, lsqDisagrees, nearestRootIndex, NO_CORRESPONDING_ROOT, type Outcomes } from './solve/compute';
+import * as compute from './solve/compute';
 import { useStore } from './store';
 
 vi.hoisted(() => {
@@ -23,11 +24,17 @@ vi.hoisted(() => {
   Object.defineProperty(globalThis, 'localStorage', { value: mem, configurable: true });
 });
 
+vi.mock('./solve/compute', async (orig) => {
+  const mod = await orig<typeof import('./solve/compute')>();
+  return { ...mod, checkResidualRad: vi.fn(mod.checkResidualRad) };
+});
+
 vi.mock('@astro', async (orig) => {
   const mod = await orig<typeof import('@astro')>();
   return { ...mod, gauss: vi.fn(mod.gauss), differentialCorrection: vi.fn(mod.differentialCorrection) };
 });
 
+const realCheck = (await vi.importActual<typeof import('./solve/compute')>('./solve/compute')).checkResidualRad;
 const initial = useStore.getState();
 beforeEach(() => {
   localStorage.clear();
@@ -37,6 +44,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(astro.gauss).mockClear();
   vi.mocked(astro.differentialCorrection).mockReset();
+  vi.mocked(compute.checkResidualRad).mockImplementation(realCheck);
 });
 
 const body = (id: string) => loadCatalog().find((c) => c.id === id)!.body as OrbitalElements;
@@ -168,10 +176,100 @@ describe('SolvePage', () => {
       expect(shown).toBe(1);
     });
 
+    it('banner roles: ambiguous and disagreement are alerts, resolved is status', () => {
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      expect(screen.getByTestId('resolved-banner').getAttribute('role')).toBe('status');
+      cleanup();
+      mount(synth('433', 2460975.5 + 90), '433');
+      expect(screen.getByTestId('ambiguous-banner').getAttribute('role')).toBe('alert');
+      cleanup();
+      for (const order of [[0.5, 5], [5, 0.5]]) {
+        lsqWithRms(order);
+        mountWithCheck('433', 2460975.5 + 90, 30, '433');
+        const d = screen.queryByTestId('lsq-disagreement');
+        if (d) expect(d.getAttribute('role')).toBe('alert');
+        cleanup();
+      }
+    });
+
+    it('under 10x separation: says the 4th observation does not clearly separate them (alert)', () => {
+      vi.mocked(compute.checkResidualRad).mockImplementation(() => 1e-5);
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      const b = screen.getByTestId('ambiguous-banner');
+      expect(b.textContent).toContain('the 4th observation does not clearly separate them');
+      expect(b.getAttribute('role')).toBe('alert');
+      expect(screen.queryByTestId('resolved-banner')).toBeNull();
+    });
+
+    it('only one survivor with a finite check residual: auto-picked, info status message only', () => {
+      const cat = body('433');
+      vi.mocked(compute.checkResidualRad).mockImplementation((el, c) =>
+        Math.abs(el.a - cat.a) / cat.a < 0.01 ? realCheck(el, c) : null,
+      );
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      const b = screen.getByTestId('one-candidate-banner');
+      expect(b.textContent).toBe('Only one candidate could be checked against the 4th observation; it was selected.');
+      expect(b.getAttribute('role')).toBe('status');
+      expect(screen.queryByTestId('resolved-banner')).toBeNull();
+      expect(screen.queryByTestId('ambiguous-banner')).toBeNull();
+      expect(screen.queryByText(/does not clearly separate/)).toBeNull();
+      expect(num('pct-gauss-a')).toBeLessThan(1);
+    });
+
+    it('manual "use this root" overrides the auto-pick while a check obs exists', () => {
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      expect(num('pct-gauss-a')).toBeLessThan(1);
+      fireEvent.click(screen.getAllByRole('button', { name: 'use this root' })[0]!);
+      expect(num('pct-gauss-a')).toBeGreaterThan(1);
+      expect(screen.getByRole('table', { name: 'Candidate roots' }).textContent).toContain('selected');
+    });
+
     it('without a check obs the ambiguous banner carries the hint', () => {
       mount(synth('433', 2460975.5 + 90), '433');
       expect(screen.getByTestId('ambiguous-banner').textContent).toContain('Add a 4th check observation on Observe to resolve this.');
     });
+  });
+});
+
+describe('angle errors, root mapping, epoch', () => {
+  it('angle error wraps: M=1 deg vs 359 deg is 2 deg, not a percentage', () => {
+    const e = elementError('M', 1, 359);
+    expect(e.abs).toBeCloseTo(2, 12);
+    expect(e.abs).toBeLessThan(180);
+  });
+  it('angle severity bands: green < 0.1, amber < 1, red otherwise', () => {
+    expect(angleSeverity(0.05)).toBe('good');
+    expect(angleSeverity(-0.5)).toBe('warn');
+    expect(angleSeverity(2)).toBe('bad');
+    expect(angleSeverity(NaN)).toBe('bad');
+  });
+  it('page: angle rows show degrees only, a row keeps %', () => {
+    mount(synth('1', 2461410.5), '1');
+    expect(screen.queryByTestId('pct-gauss-i')).toBeNull();
+    expect(screen.queryByTestId('pct-lsq-M')).toBeNull();
+    expect(screen.getByTestId('abs-gauss-i').textContent).toMatch(/°$/);
+    expect(screen.getByTestId('abs-lsq-omega').textContent).toMatch(/°$/);
+    expect(screen.getByTestId('pct-gauss-a')).toBeTruthy();
+  });
+  it('nearestRootIndex ignores rejected roots and returns -1 when none are accepted', () => {
+    const roots = [1.0, 2.0, 3.0];
+    expect(nearestRootIndex(roots, 1.1)).toBe(0);
+    expect(nearestRootIndex(roots, 1.1, [false, true, true])).toBe(1);
+    expect(nearestRootIndex(roots, 2.9, [true, true, false])).toBe(1);
+    expect(nearestRootIndex(roots, 2, [false, false, false])).toBe(-1);
+    expect(NO_CORRESPONDING_ROOT).toBe('no corresponding root for this method');
+  });
+  it('epochSource names Gauss, refined Laplace fallback, or middle observation', () => {
+    const ok = { ok: true } as never;
+    const bad = { ok: false, error: 'x' } as never;
+    const o = (g: unknown, l: unknown) => ({ gauss: g, laplaceClassical: bad, laplaceRefined: l }) as Outcomes;
+    expect(epochSource(o(ok, ok))).toBe('gauss');
+    expect(epochSource(o(bad, ok))).toBe('laplaceRefined');
+    expect(epochSource(o(bad, bad))).toBe('middle');
+  });
+  it('page epoch text names the source', () => {
+    mount(synth('1', 2461410.5));
+    expect(screen.getByText(/the Gauss middle body time/)).toBeTruthy();
   });
 });
 

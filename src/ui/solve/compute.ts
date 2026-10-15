@@ -62,6 +62,19 @@ export function commonEpoch(obs: IODInput, o: Outcomes): number {
   return jdUtcToTt(obs[1].jdUtc);
 }
 
+export type EpochSource = 'gauss' | 'laplaceRefined' | 'middle';
+/** Which source commonEpoch used. */
+export function epochSource(o: Outcomes): EpochSource {
+  if (o.gauss.ok) return 'gauss';
+  if (o.laplaceRefined.ok) return 'laplaceRefined';
+  return 'middle';
+}
+export const EPOCH_SOURCE_TEXT: Record<EpochSource, string> = {
+  gauss: 'the Gauss middle body time',
+  laplaceRefined: 'the refined Laplace middle body time, because Gauss failed',
+  middle: 'the middle observation time, because both Gauss and refined Laplace failed',
+};
+
 export const ELEMENT_KEYS = ['a', 'e', 'i', 'Omega', 'omega', 'M', 'q', 'period'] as const;
 export type ElementKey = (typeof ELEMENT_KEYS)[number];
 export const ELEMENT_LABEL: Record<ElementKey, string> = {
@@ -114,6 +127,18 @@ export function severity(pct: number): ErrorSeverity {
   if (pct < 1) return 'good';
   if (pct < 10) return 'warn';
   return 'bad';
+}
+
+/** Angle rows: green under 0.1 deg, amber under 1 deg, red otherwise (including NaN). Input is the wrapped absolute error in degrees. */
+export function angleSeverity(absDeg: number): ErrorSeverity {
+  const a = Math.abs(absDeg);
+  if (a < 0.1) return 'good';
+  if (a < 1) return 'warn';
+  return 'bad';
+}
+/** Severity for an element error: degree bands for angles (no percent), percent bands otherwise. */
+export function errorSeverity(key: ElementKey, err: ElementError): ErrorSeverity {
+  return isAngleKey(key) ? angleSeverity(err.abs) : severity(err.pct);
 }
 
 export type Residual = { raCosDecArcsec: number; decArcsec: number };
@@ -169,11 +194,17 @@ export const chosenRootIndex = (res: IODResult): number => {
   return typeof v === 'number' ? v : res.rootsConsidered.indexOf(res.chosenRoot);
 };
 
-/** Index of the root nearest (in AU) to a target heliocentric distance. */
-export function nearestRootIndex(roots: number[], r2: number): number {
-  let best = 0;
+export const NO_CORRESPONDING_ROOT = 'no corresponding root for this method';
+
+/**
+ * Index of the root nearest (in AU) to a target heliocentric distance, considering only accepted roots
+ * (`accepted[k]`; omitted means all accepted). Returns -1 if there is no accepted root.
+ */
+export function nearestRootIndex(roots: number[], r2: number, accepted?: boolean[]): number {
+  let best = -1;
   roots.forEach((r, k) => {
-    if (Math.abs(r - r2) < Math.abs((roots[best] as number) - r2)) best = k;
+    if (accepted && !accepted[k]) return;
+    if (best < 0 || Math.abs(r - r2) < Math.abs((roots[best] as number) - r2)) best = k;
   });
   return best;
 }
@@ -182,7 +213,8 @@ function runOne(fn: (idx?: number) => IODResult, wantR2: number | null): MethodO
   try {
     let res = fn();
     if (wantR2 !== null && res.rootsConsidered.length > 1) {
-      const k = nearestRootIndex(res.rootsConsidered, wantR2);
+      const k = nearestRootIndex(res.rootsConsidered, wantR2, rootInfos(res).map((r) => r.accepted));
+      if (k < 0) return { ok: false, error: NO_CORRESPONDING_ROOT };
       if (k !== chosenRootIndex(res)) res = fn(k);
     }
     return { ok: true, result: res };

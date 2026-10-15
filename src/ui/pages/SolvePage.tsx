@@ -16,6 +16,10 @@ import {
   lsqDisagrees,
   elementError,
   elementValues,
+  EPOCH_SOURCE_TEXT,
+  epochSource,
+  errorSeverity,
+  isAngleKey,
   forwardPredictions,
   lowestRmsRun,
   lsqForCandidates,
@@ -26,7 +30,6 @@ import {
   propagateElements,
   residuals,
   runSolvers,
-  severity,
   type ElementKey,
 } from '../solve/compute';
 
@@ -37,14 +40,26 @@ const fmt = (x: number, key: ElementKey): string => {
 const fmtPct = (p: number): string => (!Number.isFinite(p) ? String(p) : p !== 0 && p < 0.01 ? p.toExponential(1) : p.toFixed(2));
 const fmtAbs = (x: number): string => (!Number.isFinite(x) ? String(x) : x !== 0 && Math.abs(x) < 0.001 ? x.toExponential(2) : x.toFixed(4));
 
+/**
+ * Banner role rule: warnings and ambiguity use role="alert"; informational or resolved messages use role="status".
+ */
 function ErrCells({ id, k, value, cat }: { id: string; k: ElementKey; value: number; cat: number }) {
   const err = elementError(k, value, cat);
+  const sev = errorSeverity(k, err);
+  if (isAngleKey(k)) {
+    // Angles: wrapped absolute error in degrees only (a percentage of an angle is meaningless).
+    return (
+      <span className={`solve-err sev-${sev}`} data-testid={`abs-${id}-${k}`}>
+        |Δ| {fmtAbs(Math.abs(err.abs))}°
+      </span>
+    );
+  }
   return (
     <>
-      <span className={`solve-err sev-${severity(err.pct)}`} data-testid={`abs-${id}-${k}`}>
+      <span className={`solve-err sev-${sev}`} data-testid={`abs-${id}-${k}`}>
         Δ {fmtAbs(err.abs)}
       </span>
-      <span className={`solve-err sev-${severity(err.pct)}`} data-testid={`pct-${id}-${k}`}>
+      <span className={`solve-err sev-${sev}`} data-testid={`pct-${id}-${k}`}>
         {fmtPct(err.pct)} %
       </span>
     </>
@@ -77,12 +92,14 @@ export default function SolvePage() {
     const resid = new Map<number, number | null>();
     let best: { rootIndex: number; r2: number; res: number } | null = null;
     let ratio: number | null = null;
+    let finiteCount = 0;
     if (check && cands) {
       for (const c of cands.survivors) resid.set(c.rootIndex, checkResidualRad(c.elements, check));
       const fin = cands.survivors
         .map((c) => ({ rootIndex: c.rootIndex, r2: c.r2, res: resid.get(c.rootIndex) ?? NaN }))
         .filter((c) => Number.isFinite(c.res))
         .sort((x, y) => x.res - y.res);
+      finiteCount = fin.length;
       if (cands.survivors.length > 1 && fin.length > 0) {
         best = fin[0]!;
         const second = fin[1];
@@ -107,7 +124,7 @@ export default function SolvePage() {
       lsqSel = { rootIndex: g.chosenRoot, r2: g.chosenRoot, selected: true, ...runLsq(lsqObs, g.elements, jd) };
     }
     const lsqBest = check && lsqRuns.length > 1 ? lowestRmsRun(lsqRuns) : null;
-    return { obs, check, outcomes, jd, cands, candResid: resid, best, ratio, lsqObsCount: lsqObs.length, lsqRuns, lsqSel, lsqBest };
+    return { obs, check, outcomes, jd, cands, candResid: resid, best, ratio, finiteCount, lsqObsCount: lsqObs.length, lsqRuns, lsqSel, lsqBest };
   }, [obsKey, checkKey, pickedR2]);
 
   const analysisKey = obsKey + '|' + checkKey + '|' + pickedR2 + '|' + (catEl ? catEl.a : 'none');
@@ -212,7 +229,7 @@ export default function SolvePage() {
     );
   }
 
-  const { obs, check, outcomes, jd, cands, candResid, best, ratio, lsqRuns, lsqSel, lsqBest } = analysis;
+  const { obs, check, outcomes, jd, cands, candResid, best, ratio, finiteCount, lsqRuns, lsqSel, lsqBest } = analysis;
   const multi = cands !== null && cands.survivors.length > 1;
   const rejected = cands ? cands.all.filter((r) => !r.accepted) : [];
   const catCol = view.catValues;
@@ -229,6 +246,13 @@ export default function SolvePage() {
           return (
             <div role="alert" className="ambiguous-banner" data-testid="ambiguous-banner">
               {base}. Add a 4th check observation on Observe to resolve this.
+            </div>
+          );
+        }
+        if (finiteCount === 1) {
+          return (
+            <div role="status" className="info-banner" data-testid="one-candidate-banner">
+              Only one candidate could be checked against the 4th observation; it was selected.
             </div>
           );
         }
@@ -252,7 +276,7 @@ export default function SolvePage() {
 
       <h2>Elements at the common epoch</h2>
       <p>
-        Epoch: JD {jd.toFixed(5)} TT (the Gauss middle body time). Every solution and the catalog are brought to this epoch by
+        Epoch: JD {jd.toFixed(5)} TT ({EPOCH_SOURCE_TEXT[epochSource(outcomes)]}). Every solution and the catalog are brought to this epoch by
         two-body propagation. Catalog elements are osculating at their own epoch and are propagated two-body, with no
         perturbations, so the catalog column (and every error against it) carries a small perturbation error that grows with the
         interval from the catalog epoch.
