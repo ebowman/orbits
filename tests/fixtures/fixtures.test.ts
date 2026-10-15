@@ -13,6 +13,7 @@ describe('horizons fixtures', () => {
       expect(files).toContain(`${b}-568.json`);
     }
     expect(files).toContain('earth.json');
+    expect(files).toContain('earth-ceres-opposition.json');
     for (const b of ['ceres', 'vesta', 'eros']) {
       expect(files).toContain(`${b}-opposition-geocentric.json`);
       expect(files).toContain(`${b}-opposition-568.json`);
@@ -36,7 +37,7 @@ describe('horizons fixtures', () => {
     });
   }
 
-  for (const f of files.filter((x) => x !== 'earth.json' && !x.endsWith('-elements.json'))) {
+  for (const f of files.filter((x) => !['earth.json', 'earth-ceres-opposition.json'].includes(x) && !x.endsWith('-elements.json'))) {
     it(`${f} observer rows are valid`, () => {
       const j = load(f);
       expect(j.timeScale).toBe('UTC');
@@ -70,5 +71,20 @@ describe('horizons fixtures', () => {
       expect(Math.hypot(r.x, r.y, r.z)).toBeGreaterThan(0.9);
       expect(Math.hypot(r.x, r.y, r.z)).toBeLessThan(1.1);
     }
+  });
+
+  it('earth-ceres-opposition.json has 41 daily Earth rows aligned to UTC days', () => {
+    const j = load('earth-ceres-opposition.json');
+    expect(j.rows.length).toBe(41);
+    j.rows.forEach((r: Record<string, number>, k: number) => {
+      for (const key of ['jdUtc', 'jdTdb', 'x', 'y', 'z', 'vx', 'vy', 'vz']) {
+        expect(Number.isFinite(r[key]), `${key} row ${k}`).toBe(true);
+      }
+      const rad = Math.hypot(r.x!, r.y!, r.z!);
+      expect(rad).toBeGreaterThan(0.9);
+      expect(rad).toBeLessThan(1.1);
+      expect(r.jdUtc).toBe(2461410.5 + k);
+      expect(Math.abs(r.jdTdb! - r.jdUtc! - 69.184 / 86400)).toBeLessThan(1e-9);
+    });
   });
 });

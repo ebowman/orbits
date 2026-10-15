@@ -309,4 +309,14 @@ describe('gauss IOD, regressions', () => {
     expect(w).toMatch(/change in rho [0-9.]+e-\d+ AU\) rather than reaching 0\./);
     expect(res.warnings.some((x) => x.includes('did not converge'))).toBe(false);
   });
+
+  it('rejects malformed observerPositions with a descriptive error', () => {
+    const el = elementsOf('1');
+    const obs = synth(el, el.epochJd, null);
+    const v: [number, number, number] = [1, 0, 0];
+    expect(() => gauss(obs, { observerPositions: [v, v] as never })).toThrow(/observerPositions must contain exactly 3/);
+    expect(() => gauss(obs, { observerPositions: [v, v, v, v] as never })).toThrow(/observerPositions/);
+    expect(() => gauss(obs, { observerPositions: [v, v, [1, NaN, 0]] as never })).toThrow(/finite/);
+    expect(() => gauss(obs, { observerPositions: [v, v, [1, 0] as never] })).toThrow(/3-vector/);
+  });
 });

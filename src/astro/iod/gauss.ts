@@ -22,6 +22,11 @@ export type GaussOptions = {
   tol?: number;
   lightTime?: boolean;
   rootIndex?: number;
+  /**
+   * Optional override of the three Sun-to-observer positions (heliocentric equatorial J2000, AU, at each
+   * observation's TT). Includes any site offset. Default: computed from the Standish ephemeris + site.
+   */
+  observerPositions?: [Vec3, Vec3, Vec3];
 };
 
 const MAX_TRACE_ITERATIONS = 20;
@@ -73,12 +78,27 @@ export function gauss(obs: IODInput, opts: GaussOptions = {}): IODResult {
 
   // Step 2: observer positions.
   const jdTt = obs.map((o) => jdUtcToTt(o.jdUtc)) as Triple;
-  const R = obs.map((o, i) => observerHeliocentric(o.site, jdTt[i] as number, o.jdUtc)) as [Vec3, Vec3, Vec3];
+  const supplied = opts.observerPositions;
+  if (supplied !== undefined) {
+    if (
+      !Array.isArray(supplied) ||
+      supplied.length !== 3 ||
+      !supplied.every((v) => Array.isArray(v) && v.length === 3 && v.every((c) => Number.isFinite(c)))
+    ) {
+      throw new Error('observerPositions must contain exactly 3 entries, each a 3-vector of finite numbers (AU).');
+    }
+  }
+  const R = (supplied ?? obs.map((o, i) => observerHeliocentric(o.site, jdTt[i] as number, o.jdUtc))) as [
+    Vec3,
+    Vec3,
+    Vec3,
+  ];
   trace.push({
     id: 'observer-positions',
     title: 'Observer positions',
-    explanation:
-      'The Sun-to-observer position vectors $\\mathbf R_i$ at the three observation times come from the Earth ephemeris plus the site offset. These are known exactly, so all the uncertainty is in the object.',
+    explanation: supplied
+      ? 'The Sun-to-observer position vectors $\\mathbf R_i$ at the three observation times were supplied by the caller rather than computed from the built-in Earth ephemeris. These are treated as known exactly, so all the uncertainty is in the object.'
+      : 'The Sun-to-observer position vectors $\\mathbf R_i$ at the three observation times come from the Earth ephemeris plus the site offset. These are known exactly, so all the uncertainty is in the object.',
     values: { R1: R[0], R2: R[1], R3: R[2], jdTt1: jdTt[0], jdTt2: jdTt[1], jdTt3: jdTt[2] },
   });
 

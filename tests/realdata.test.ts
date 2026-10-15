@@ -3,6 +3,8 @@
 //  - Earth position comes from the Standish approximate ephemeris, up to ~9e-5 AU off (planets.test.ts vs Horizons);
 //  - predictor-vs-Horizons residuals are 6-14 arcsec (ephemeris.test.ts), larger than the 1 arcsec noise tests,
 //    which already showed e errors up to ~1e-2 for Ceres.
+// CONTROL (last describe): feeding Horizons Earth vectors instead of Standish for Ceres 10 d (Gauss/refined) drops
+// errors a 2.8e-3 -> 4.4e-5 (rel), e 0.0150 -> 0.00019, i 0.137 -> 0.0014 deg; i.e. Standish Earth is the dominant term.
 // Measured worst cases (Gauss/refined): Ceres 10 d e=0.0150, Eros i=0.147 deg. Hence e<0.03, i<0.35 deg
 // (classical: e<0.05, i<0.5 deg); a stays <1% (classical <10%). The diagnostic test below shows the solver
 // itself recovers Horizons elements to <1e-6 when fed our own predict() output.
@@ -19,9 +21,11 @@ import type { IODInput, IODResult, Observation } from '../src/astro/iod/types';
 import type { OrbitalElements } from '../src/astro/elements';
 import type { Site } from '../src/astro/observer';
 import { elementsToState, stateToElements } from '../src/astro/state';
+import { observerGeocentric } from '../src/astro/observer';
 import { predict } from '../src/astro/ephemeris';
 import { propagate } from '../src/astro/propagate';
 import { DEG2RAD, RAD2DEG } from '../src/astro/angles';
+import type { Vec3 } from '../src/astro/vec';
 
 const dir = join(__dirname, 'fixtures', 'horizons');
 type Row = { jdUtc: number; raDeg: number; decDeg: number };
@@ -121,6 +125,7 @@ function check(
   if (found) {
     console.log(`${label}: default pick was WRONG; rootIndex ${found.idx} meets tolerance`);
     record(body, fixture, spacing, method, found.x, found.r, `default root wrong; rootIndex ${found.idx}`);
+    expect(found.r.converged, `${label} alternative root converged`).toBe(true);
     return;
   }
   record(body, fixture, spacing, method, x, def, 'TOLERANCE FAILED');
@@ -160,14 +165,17 @@ describe('hard geometry: conjunction-window fixtures (log only)', () => {
           ['gauss', () => gauss(obs)],
           ['laplace-refined', () => laplace(obs, { iterate: true })],
         ] as const) {
+          let r: IODResult | null = null;
           try {
-            const r = run();
-            console.log(`conjunction ${tag} ${method}: a=${r.elements.a.toFixed(3)} e=${r.elements.e.toFixed(3)} converged=${r.converged} warnings=${r.warnings.length}`);
-            expect(Number.isFinite(r.elements.a)).toBe(true);
+            r = run();
           } catch (err) {
             console.log(`conjunction ${tag} ${method}: threw ${(err as Error).message}`);
             expect(err).toBeInstanceOf(Error);
             expect((err as Error).message.length).toBeGreaterThan(5);
+          }
+          if (r) {
+            console.log(`conjunction ${tag} ${method}: a=${r.elements.a.toFixed(3)} e=${r.elements.e.toFixed(3)} converged=${r.converged} warnings=${r.warnings.length}`);
+            expect(Number.isFinite(r.elements.a)).toBe(true);
           }
         }
       });
@@ -195,5 +203,36 @@ describe('solver self-consistency diagnostic', () => {
     expect(x.aRel).toBeLessThan(1e-6);
     expect(x.e).toBeLessThan(1e-6);
     expect(x.iDeg).toBeLessThan(1e-4);
+  });
+});
+
+describe('control: Horizons Earth vs Standish Earth (error-budget attribution)', () => {
+  it('ceres 10d opposition gauss (refined): errors with Standish vs Horizons Earth positions', () => {
+    const fx = load<Fixture>('ceres-opposition-geocentric.json');
+    const earth = load<{ rows: { jdUtc: number; x: number; y: number; z: number }[] }>('earth-ceres-opposition.json');
+    const row = load<{ rows: ElRow[] }>('ceres-opposition-elements.json').rows.find((r) => r.spacingDays === 10)!;
+    const days = [0, 10, 20];
+    const obs = buildObs(fx, days);
+    // Horizons rows are Earth centre, sampled at jdUtc + (TT-UTC); add the site offset if any (null for Ceres geocentric).
+    const R = days.map((d, i): Vec3 => {
+      const e = earth.rows[d]!;
+      const o = obs[i]!;
+      expect(Math.abs(e.jdUtc - o.jdUtc), `earth row ${d} jdUtc matches observation`).toBeLessThan(1e-6);
+      const g: Vec3 = o.site ? observerGeocentric(o.site, o.jdUtc) : [0, 0, 0];
+      return [e.x + g[0], e.y + g[1], e.z + g[2]];
+    });
+    const std = gauss(obs);
+    const hor = gauss(obs, { observerPositions: R as [Vec3, Vec3, Vec3] });
+    const xs = errs(std.elements, truthAt(row, std.jdTt2));
+    const xh = errs(hor.elements, truthAt(row, hor.jdTt2));
+    console.log('CONTROL ceres 10d gauss  Standish Earth:', xs);
+    console.log('CONTROL ceres 10d gauss  Horizons Earth:', xh);
+    expect(std.converged).toBe(true);
+    expect(hor.converged).toBe(true);
+    // Measured: Horizons Earth cuts e error ~80x (0.0150 -> 0.00019) and i ~100x, so Standish Earth dominates the budget.
+    expect(xh.e).toBeLessThan(xs.e);
+    expect(xh.iDeg).toBeLessThan(xs.iDeg);
+    expect(xh.aRel).toBeLessThan(xs.aRel);
+    expect(xh.e).toBeLessThan(0.002);
   });
 });

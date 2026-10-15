@@ -202,7 +202,42 @@ async function earthFixture() {
   return { body: 'Earth', center: '500@10', frame: 'ICRF equatorial J2000', units: 'AU, AU/day', timeScale: 'TDB', rows, query: url };
 }
 
+// Daily geocenter-of-Earth heliocentric vectors over the Ceres opposition window, sampled at the TDB
+// instants that match the UTC rows of ceres-opposition-*.json (jdTdb = jdUtc + TT-UTC). Same params as earth.json.
+async function earthWindowFixture(startUtc) {
+  const start = startUtc + TT_MINUS_UTC_DAYS;
+  const { url, lines } = await horizons({
+    COMMAND: `'399'`,
+    CENTER: `'500@10'`,
+    EPHEM_TYPE: 'VECTORS',
+    REF_PLANE: `'FRAME'`,
+    OUT_UNITS: `'AU-D'`,
+    VEC_TABLE: `'2'`,
+    CSV_FORMAT: `'YES'`,
+    TIME_TYPE: `'TDB'`,
+    START_TIME: `'JD ${start}'`,
+    STOP_TIME: `'JD ${start + 40}'`,
+    STEP_SIZE: `'1 d'`,
+  });
+  const rows = lines.map((l, k) => {
+    const c = cols(l);
+    return {
+      jdUtc: startUtc + k,
+      jdTdb: num(c[0], 'jd'),
+      x: num(c[2], 'x'), y: num(c[3], 'y'), z: num(c[4], 'z'),
+      vx: num(c[5], 'vx'), vy: num(c[6], 'vy'), vz: num(c[7], 'vz'),
+    };
+  });
+  return { body: 'Earth', center: '500@10', frame: 'ICRF equatorial J2000', units: 'AU, AU/day', timeScale: 'TDB', purpose: 'Daily Earth vectors over the Ceres opposition window (row k = day k) for the Horizons-Earth control test', rows, query: url };
+}
+
 async function main() {
+  if (process.argv.includes('--earth-window-only')) {
+    const f = await earthWindowFixture(OPPOSITION_START[1]);
+    await writeJsonAtomic(resolve(ROOT, 'tests/fixtures/horizons/earth-ceres-opposition.json'), f);
+    console.log('done');
+    return;
+  }
   const fetchedAt = new Date().toISOString();
   const catalog = [];
   for (const [id, name] of BODIES) {
@@ -237,6 +272,8 @@ async function main() {
   }
   console.log('Horizons earth vectors');
   fixtures.push(['earth.json', await earthFixture()]);
+  console.log('Horizons earth daily vectors (Ceres opposition window)');
+  fixtures.push(['earth-ceres-opposition.json', await earthWindowFixture(OPPOSITION_START[1])]);
 
   // All fetches succeeded; only now write (each atomically).
   await writeJsonAtomic(resolve(ROOT, 'src/data/catalog.json'), catalog);
