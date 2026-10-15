@@ -203,6 +203,91 @@ describe('ObservePage', () => {
     expect(importSet(mk())).toBeTruthy();
   });
 
+  describe('check observation', () => {
+    const checkSet = (id: string) => useStore.getState().observationSets.find((s) => s.id === id)!;
+    const toggle = () => fireEvent.click(screen.getByLabelText('Add a 4th check observation (optional)'));
+    const fillCheck = (dt: string, ra: string, dec: string) => {
+      const fs = screen.getByRole('group', { name: 'Check observation' });
+      fireEvent.change(within(fs).getByLabelText('Date/time (UTC)'), { target: { value: dt } });
+      fireEvent.change(within(fs).getByLabelText('RA check'), { target: { value: ra } });
+      fireEvent.change(within(fs).getByLabelText('Dec check'), { target: { value: dec } });
+    };
+    const fill3 = () => {
+      fill(1, '2026-01-01T00:00', '12 34 56', '+10 00 00');
+      fill(2, '2026-01-08T00:00', '12 40 00', '+10 30 00');
+      fill(3, '2026-01-15T00:00', '12 50 00', '+11 00 00');
+    };
+
+    it('valid check row sets check; invalid or cleared leaves it undefined; IOD stays 3', () => {
+      const id = setup();
+      fill3();
+      toggle();
+      expect(checkSet(id).check).toBeUndefined();
+      fillCheck('2026-01-22T00:00', '13 00 00', '+11 30 00');
+      expect(checkSet(id).check?.jdUtc).toBe(2461062.5);
+      expect(checkSet(id).observations).toHaveLength(3);
+      expect(checkSet(id).checkDraft?.ra).toBe('13 00 00');
+      fillCheck('2026-01-22T00:00', '25 00 00', '+11 30 00');
+      expect(checkSet(id).check).toBeUndefined();
+      fillCheck('2026-01-22T00:00', '13 00 00', '+11 30 00');
+      expect(checkSet(id).check).toBeDefined();
+      toggle();
+      expect(checkSet(id).check).toBeUndefined();
+      expect(checkSet(id).checkDraft).toBeUndefined();
+    });
+
+    it('check time before t1 is allowed; time within 1 s of an IOD time is rejected', () => {
+      const id = setup();
+      fill3();
+      toggle();
+      fillCheck('2025-12-25T00:00', '13 00 00', '+11 30 00');
+      expect(checkSet(id).check).toBeDefined();
+      fillCheck('2026-01-08T00:00:00', '13 00 00', '+11 30 00');
+      expect(checkSet(id).check).toBeUndefined();
+      expect(screen.getByTestId('check-error').textContent).toMatch(/differ/);
+    });
+
+    it('importSet round-trips check/checkDraft and legacy sets without them load', () => {
+      const check = { jdUtc: 2461062.5, raRad: 1, decRad: 0.2, site: null, label: 'Check obs' };
+      const cd = { utc: 'a', ra: 'b', dec: 'c', siteKey: 'geocenter' };
+      const mk = (extra: object) => JSON.stringify({ schemaVersion: 1, set: { name: 'n', observations: [], ...extra } });
+      const id = importSet(mk({ check, checkDraft: cd }));
+      const s = useStore.getState().observationSets.find((x) => x.id === id)!;
+      expect(s.check).toEqual(check);
+      expect(s.checkDraft).toEqual(cd);
+      expect(() => importSet(mk({ checkDraft: { utc: 1 } }))).toThrow(/checkDraft/);
+      expect(() => importSet(mk({ check: { jdUtc: 1 } }))).toThrow(/check observation/);
+      const legacyId = importSet(mk({}));
+      const legacy = useStore.getState().observationSets.find((x) => x.id === legacyId)!;
+      expect(legacy.check).toBeUndefined();
+      expect(legacy.checkDraft).toBeUndefined();
+      // legacy set in the store still renders without a check row
+      useStore.getState().setActiveSet(legacy.id);
+      mount();
+      expect(screen.queryByRole('group', { name: 'Check observation' })).toBeNull();
+    });
+
+    it('synthetic 4 option yields 3 observations + check at t3 + (t3 - t2)', () => {
+      setup();
+      fireEvent.change(screen.getByLabelText('Body'), { target: { value: loadCatalog().find((c) => c.name === 'Ceres')!.id } });
+      fireEvent.change(screen.getByLabelText('Observations'), { target: { value: '4' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate synthetic set' }));
+      const st = useStore.getState();
+      const set = st.observationSets.find((x) => x.id === st.activeSetId)!;
+      expect(set.observations).toHaveLength(3);
+      const [, t2, t3] = set.observations.map((o) => o.jdUtc) as [number, number, number];
+      expect(set.check!.jdUtc).toBeCloseTo(t3 + (t3 - t2), 9);
+      expect(set.check!.label).toBe('Synthetic check');
+      expect(screen.getByRole('group', { name: 'Check observation' })).toBeTruthy();
+      // default stays 3
+      cleanup();
+      mount();
+      fireEvent.click(screen.getByRole('button', { name: 'Generate synthetic set' }));
+      const st2 = useStore.getState();
+      expect(st2.observationSets.find((x) => x.id === st2.activeSetId)!.check).toBeUndefined();
+    });
+  });
+
   describe('synthetic', () => {
     const gen = (sigma: string, seed = '1') => {
       fireEvent.change(screen.getByLabelText('Noise sigma (arcsec)'), { target: { value: sigma } });

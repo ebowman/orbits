@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { formatDec, formatRA, loadCatalog, type IODInput, type OrbitalElements } from '@astro';
+import { formatDec, formatRA, loadCatalog, type IODInput, type Observation, type OrbitalElements } from '@astro';
 import { useStore } from '../store';
 import {
   ELEMENT_KEYS,
@@ -9,7 +9,9 @@ import {
   METHOD_IDS,
   METHOD_LABEL,
   candidates,
+  checkResidualRad,
   commonEpoch,
+  formatCheckResidual,
   elementError,
   elementValues,
   forwardPredictions,
@@ -57,15 +59,42 @@ export default function SolvePage() {
 
   const complete = !!set && set.observations.length === 3;
   const obsKey = complete ? JSON.stringify(set.observations) : '';
+  const checkKey = complete && set.check ? JSON.stringify(set.check) : '';
   const analysis = useMemo(() => {
     if (!obsKey) return null;
     const obs = JSON.parse(obsKey) as IODInput;
-    const outcomes = runSolvers(obs, pickedR2);
-    const jd = commonEpoch(obs, outcomes);
-    return { obs, outcomes, jd, cands: candidates(obs, outcomes, jd) };
-  }, [obsKey, pickedR2]);
+    const check = checkKey ? (JSON.parse(checkKey) as Observation) : null;
+    let outcomes = runSolvers(obs, pickedR2);
+    let jd = commonEpoch(obs, outcomes);
+    let cands = candidates(obs, outcomes, jd);
+    const resid = new Map<number, number | null>();
+    let best: { rootIndex: number; r2: number; res: number } | null = null;
+    let ratio: number | null = null;
+    if (check && cands) {
+      for (const c of cands.survivors) resid.set(c.rootIndex, checkResidualRad(c.elements, check));
+      const fin = cands.survivors
+        .map((c) => ({ rootIndex: c.rootIndex, r2: c.r2, res: resid.get(c.rootIndex) ?? NaN }))
+        .filter((c) => Number.isFinite(c.res))
+        .sort((x, y) => x.res - y.res);
+      if (cands.survivors.length > 1 && fin.length > 0) {
+        best = fin[0]!;
+        const second = fin[1];
+        ratio = second ? (best.res === 0 ? Infinity : second.res / best.res) : null;
+        // Auto-select the best-fitting survivor unless the user picked one manually.
+        const cur = cands.survivors.find((c) => c.selected);
+        if (pickedR2 === null && cur && cur.rootIndex !== best.rootIndex) {
+          outcomes = runSolvers(obs, best.r2);
+          jd = commonEpoch(obs, outcomes);
+          cands = candidates(obs, outcomes, jd);
+          resid.clear();
+          if (cands) for (const c of cands.survivors) resid.set(c.rootIndex, checkResidualRad(c.elements, check));
+        }
+      }
+    }
+    return { obs, check, outcomes, jd, cands, candResid: resid, best, ratio };
+  }, [obsKey, checkKey, pickedR2]);
 
-  const analysisKey = obsKey + '|' + pickedR2 + '|' + (catEl ? catEl.a : 'none');
+  const analysisKey = obsKey + '|' + checkKey + '|' + pickedR2 + '|' + (catEl ? catEl.a : 'none');
   const view = useMemo(() => {
     if (!analysis) return null;
     const { obs, outcomes, jd } = analysis;
@@ -76,17 +105,19 @@ export default function SolvePage() {
       let values: Record<ElementKey, number> | null = null;
       let resid = null;
       let fwd = null;
+      let checkRes: number | null = null;
       let err: string | null = o.ok ? null : o.error;
       if (el) {
         try {
           values = elementValues(propagateElements(el, jd));
           resid = residuals(el, obs);
           fwd = forwardPredictions(el, obs, catEl);
+          if (analysis.check) checkRes = checkResidualRad(el, analysis.check);
         } catch (e) {
           err = e instanceof Error ? e.message : String(e);
         }
       }
-      return { id, o, values, resid, fwd, err };
+      return { id, o, values, resid, fwd, checkRes, err };
     });
     const catValues = catProp ? elementValues(catProp) : null;
     const catFwd = catEl ? forwardPredictions(catEl, obs, null) : null;
@@ -140,7 +171,7 @@ export default function SolvePage() {
     );
   }
 
-  const { obs, outcomes, jd, cands } = analysis;
+  const { obs, check, outcomes, jd, cands, candResid, best, ratio } = analysis;
   const multi = cands !== null && cands.survivors.length > 1;
   const rejected = cands ? cands.all.filter((r) => !r.accepted) : [];
   const catCol = view.catValues;
@@ -150,11 +181,33 @@ export default function SolvePage() {
       <h1>Solve orbit</h1>
       {sel}
 
-      {multi && cands && (
-        <div role="alert" className="ambiguous-banner" data-testid="ambiguous-banner">
-          Ambiguous: {cands.survivors.length} physically valid solutions — three observations can't distinguish them
-        </div>
-      )}
+      {multi && cands && (() => {
+        const n = cands.survivors.length;
+        const base = `Ambiguous: ${n} physically valid solutions — three observations can't distinguish them`;
+        if (!check) {
+          return (
+            <div role="alert" className="ambiguous-banner" data-testid="ambiguous-banner">
+              {base}. Add a 4th check observation on Observe to resolve this.
+            </div>
+          );
+        }
+        if (best && ratio !== null && ratio >= 10) {
+          const others = cands.survivors
+            .filter((c) => c.rootIndex !== best.rootIndex)
+            .map((c) => formatCheckResidual(candResid.get(c.rootIndex) ?? null));
+          return (
+            <div role="status" className="resolved-banner" data-testid="resolved-banner">
+              Resolved by 4th observation: root r2 = {best.r2.toFixed(4)} AU fits the check obs to {formatCheckResidual(best.res)}; the
+              alternative misses by {others.join(', ')}.
+            </div>
+          );
+        }
+        return (
+          <div role="alert" className="ambiguous-banner" data-testid="ambiguous-banner">
+            {base}; the 4th observation does not clearly separate them.
+          </div>
+        );
+      })()}
 
       <h2>Elements at the common epoch</h2>
       <p>
@@ -238,6 +291,7 @@ export default function SolvePage() {
                 <th>a (AU)</th>
                 <th>e</th>
                 <th>i (deg)</th>
+                {check && <th>Check obs residual</th>}
                 <th />
               </tr>
             </thead>
@@ -253,6 +307,7 @@ export default function SolvePage() {
                         {catCol && <ErrCells id={`cand${c.rootIndex}`} k={k} value={v[k]} cat={catCol[k]} />}
                       </td>
                     ))}
+                    {check && <td data-testid={`candidate-check-${c.rootIndex}`}>{formatCheckResidual(candResid.get(c.rootIndex) ?? null)}</td>}
                     <td>
                       {c.selected ? (
                         'selected'
@@ -303,6 +358,16 @@ export default function SolvePage() {
               ))}
             </tr>
           ))}
+          {check && (
+            <tr>
+              <td>Check obs residual</td>
+              {view.cols.map((c) => (
+                <td key={c.id} data-testid={`check-resid-${c.id}`}>
+                  {formatCheckResidual(c.checkRes)}
+                </td>
+              ))}
+            </tr>
+          )}
         </tbody>
       </table>
 

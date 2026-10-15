@@ -239,3 +239,25 @@ export function candidates(obs: IODInput, o: Outcomes, jdTt: number): { method: 
   }
   return { method: m, all, survivors };
 }
+
+/**
+ * Check-observation residual: angular separation (rad) between the observed RA/Dec and the
+ * two-body prediction of `el` at the check time, from the check obs's site. Uses the same
+ * light-time-corrected predictor as the O-C residuals. Returns null if prediction throws or is non-finite.
+ */
+export function checkResidualRad(el: OrbitalElements, check: Observation): number | null {
+  try {
+    const p = predict(el, check.jdUtc, check.site);
+    const sep = angularSeparation(check.raRad, check.decRad, p.raRad, p.decRad);
+    return Number.isFinite(sep) ? sep : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Format an angular residual: arcsec under 3600 arcsec, otherwise degrees; null -> an em dash. */
+export function formatCheckResidual(rad: number | null): string {
+  if (rad === null || !Number.isFinite(rad)) return '—';
+  const as = rad * ARCSEC;
+  return as < 3600 ? `${as.toFixed(as < 10 ? 3 : 1)}″` : `${(rad * DEG).toFixed(3)}°`;
+}

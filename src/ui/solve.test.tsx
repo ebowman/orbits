@@ -98,4 +98,40 @@ describe('SolvePage', () => {
     expect(screen.getByTestId('cell-gauss-a').textContent).not.toBe(before);
     expect(num('pct-gauss-a')).toBeLessThan(1e-3);
   });
+
+  describe('check observation', () => {
+    function mountWithCheck(id: string, start: number, checkOffset: number, targetId: string) {
+      const el = body(id);
+      const p = predict(el, start + checkOffset, null);
+      const check = { jdUtc: start + checkOffset, raRad: p.raRad, decRad: p.decRad, site: null, label: 'Synthetic check' };
+      const sid = useStore.getState().addSet({ name: 'S', observations: synth(id, start), check, targetId });
+      useStore.getState().setActiveSet(sid);
+      render(
+        <MemoryRouter>
+          <SolvePage />
+        </MemoryRouter>,
+      );
+    }
+
+    it('Eros ambiguous date: 4th obs auto-selects the correct root and banner says resolved', () => {
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      expect(screen.queryByTestId('ambiguous-banner')).toBeNull();
+      expect(screen.getByTestId('resolved-banner').textContent).toContain('Resolved by 4th observation');
+      expect(num('pct-gauss-a')).toBeLessThan(1);
+      expect(screen.getByRole('table', { name: 'Candidate roots' })).toBeTruthy();
+      expect(screen.getByText('Check obs residual', { selector: 'th' })).toBeTruthy();
+    });
+
+    it('check residual cell renders small (< 60 arcsec) for a noise-free synthetic set', () => {
+      mountWithCheck('1', 2461410.5, 30, '1');
+      const txt = screen.getByTestId('check-resid-gauss').textContent!;
+      expect(txt).toMatch(/″$/);
+      expect(parseFloat(txt)).toBeLessThan(60);
+    });
+
+    it('without a check obs the ambiguous banner carries the hint', () => {
+      mount(synth('433', 2460975.5 + 90), '433');
+      expect(screen.getByTestId('ambiguous-banner').textContent).toContain('Add a 4th check observation on Observe to resolve this.');
+    });
+  });
 });

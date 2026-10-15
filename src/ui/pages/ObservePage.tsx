@@ -93,16 +93,30 @@ function resolveSite(row: Row, sites: NamedSite[]): { site: Site | null; ok: boo
   return { site: copySite(s), ok: s !== undefined };
 }
 
-function parseRow(row: Row, sites: NamedSite[], n: number) {
+function parseRow(row: Row, sites: NamedSite[], n: number | string, label?: string) {
   const dt = attempt(row.utc, parseUtcInput);
   const ra = attempt(row.ra, parseRA);
   const dec = attempt(row.dec, parseDec);
   const site = resolveSite(row, sites);
   let obs: Observation | null = null;
   if (dt.ok === true && ra.ok === true && dec.ok === true && site.ok) {
-    obs = { jdUtc: dt.value, raRad: ra.value, decRad: dec.value, site: site.site, label: `Obs ${n}` };
+    obs = { jdUtc: dt.value, raRad: ra.value, decRad: dec.value, site: site.site, label: label ?? `Obs ${n}` };
   }
   return { dt, ra, dec, obs };
+}
+
+/** Check-row time must differ from every valid IOD time by more than 1 s. */
+function checkDuplicateError(rows: Row[], checkRow: Row | null): string | null {
+  if (!checkRow) return null;
+  const c = attempt(checkRow.utc, parseUtcInput);
+  if (c.ok !== true) return null;
+  for (const r of rows) {
+    const d = attempt(r.utc, parseUtcInput);
+    if (d.ok === true && Math.abs(d.value - c.value) * 86400 < 1) {
+      return 'The check observation time must differ from the three observation times by more than 1 second.';
+    }
+  }
+  return null;
 }
 
 function ObsRows({ setId }: { setId: string }) {
@@ -115,20 +129,38 @@ function ObsRows({ setId }: { setId: string }) {
     if (set?.drafts) return set.drafts.map((d) => ({ ...d }));
     return [0, 1, 2].map((i) => rowFromObs(set?.observations[i], st.sites));
   });
+  const [checkRow, setCheckRow] = useState<Row | null>(() => {
+    const st = useStore.getState();
+    const set = st.observationSets.find((x) => x.id === setId);
+    if (set?.checkDraft) return { ...set.checkDraft };
+    if (set?.check) return rowFromObs(set.check, st.sites);
+    return null;
+  });
 
   const parsed = useMemo(() => rows.map((r, i) => parseRow(r, sites, i + 1)), [rows, sites]);
+  const checkParsed = useMemo(
+    () => (checkRow ? parseRow(checkRow, sites, 'check', 'Check obs') : null),
+    [checkRow, sites],
+  );
+  const dupError = checkDuplicateError(rows, checkRow);
 
-  const commit = (next: Row[]) => {
+  const commit = (next: Row[], nextCheck: Row | null) => {
     setRows(next);
+    setCheckRow(nextCheck);
     const sts = useStore.getState().sites;
     const obs = next.map((r, i) => parseRow(r, sts, i + 1).obs);
     const all = obs.every((o) => o !== null);
+    const checkObs =
+      nextCheck && !checkDuplicateError(next, nextCheck) ? parseRow(nextCheck, sts, 'check', 'Check obs').obs : null;
     updateSet(setId, {
       drafts: next.map((r) => ({ ...r })) as [RowDraft, RowDraft, RowDraft],
       observations: all ? (obs as Observation[]) : [],
+      checkDraft: nextCheck ? { ...nextCheck } : undefined,
+      check: checkObs ?? undefined,
     });
   };
-  const patch = (i: number, p: Partial<Row>) => commit(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const patch = (i: number, p: Partial<Row>) => commit(rows.map((r, j) => (j === i ? { ...r, ...p } : r)), checkRow);
+  const patchCheck = (p: Partial<Row>) => commit(rows, { ...(checkRow ?? EMPTY_ROW), ...p });
 
   const allObs = parsed.map((p) => p.obs);
   const complete = allObs.every((o) => o !== null);
@@ -143,66 +175,63 @@ function ObsRows({ setId }: { setId: string }) {
   }
   const canSolve = complete && error === null;
 
+  const renderRow = (r: Row, p: ReturnType<typeof parseRow>, n: number | string, legend: string, on: (q: Partial<Row>) => void) => (
+    <fieldset key={String(n)} className="obs-row">
+      <legend>{legend}</legend>
+      <label>
+        Date/time (UTC)
+        <input type="datetime-local" step="1" value={r.utc} onChange={(e) => on({ utc: e.target.value })} />
+      </label>
+      {p.dt.ok === true && <span> JD {p.dt.value}</span>}
+      {p.dt.ok === false && <span role="alert" className="error"> {p.dt.error}</span>}
+      <label>
+        RA {n}
+        <input type="text" value={r.ra} placeholder="hh mm ss.s" onChange={(e) => on({ ra: e.target.value })} />
+      </label>
+      {p.ra.ok === true && <span data-testid={`ra-echo-${n}`}> = {formatRA(p.ra.value, 2)}</span>}
+      {p.ra.ok === false && <span role="alert" className="error"> {p.ra.error}</span>}
+      <label>
+        Dec {n}
+        <input type="text" value={r.dec} placeholder="+dd mm ss" onChange={(e) => on({ dec: e.target.value })} />
+      </label>
+      {p.dec.ok === true && <span data-testid={`dec-echo-${n}`}> = {formatDec(p.dec.value, 1)}</span>}
+      {p.dec.ok === false && <span role="alert" className="error"> {p.dec.error}</span>}
+      <label>
+        Site {n}
+        <select value={r.siteKey} onChange={(e) => on({ siteKey: e.target.value })}>
+          <option value={GEO}>Geocenter (none)</option>
+          {storedFromKey(r.siteKey) && (
+            <option value={r.siteKey}>
+              Stored ({storedFromKey(r.siteKey)!.latDeg}, {storedFromKey(r.siteKey)!.lonEastDeg})
+            </option>
+          )}
+          {sites.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </fieldset>
+  );
+
   return (
     <div>
-      {rows.map((r, i) => {
-        const p = parsed[i]!;
-        const n = i + 1;
-        return (
-          <fieldset key={i} className="obs-row">
-            <legend>Observation {n}</legend>
-            <label>
-              Date/time (UTC)
-              <input
-                type="datetime-local"
-                step="1"
-                value={r.utc}
-                onChange={(e) => patch(i, { utc: e.target.value })}
-              />
-            </label>
-            {p.dt.ok === true && <span> JD {p.dt.value}</span>}
-            {p.dt.ok === false && <span role="alert" className="error"> {p.dt.error}</span>}
-            <label>
-              RA {n}
-              <input
-                type="text"
-                value={r.ra}
-                placeholder="hh mm ss.s"
-                onChange={(e) => patch(i, { ra: e.target.value })}
-              />
-            </label>
-            {p.ra.ok === true && <span data-testid={`ra-echo-${n}`}> = {formatRA(p.ra.value, 2)}</span>}
-            {p.ra.ok === false && <span role="alert" className="error"> {p.ra.error}</span>}
-            <label>
-              Dec {n}
-              <input
-                type="text"
-                value={r.dec}
-                placeholder="+dd mm ss"
-                onChange={(e) => patch(i, { dec: e.target.value })}
-              />
-            </label>
-            {p.dec.ok === true && <span data-testid={`dec-echo-${n}`}> = {formatDec(p.dec.value, 1)}</span>}
-            {p.dec.ok === false && <span role="alert" className="error"> {p.dec.error}</span>}
-            <label>
-              Site {n}
-              <select value={r.siteKey} onChange={(e) => patch(i, { siteKey: e.target.value })}>
-                <option value={GEO}>Geocenter (none)</option>
-                {storedFromKey(r.siteKey) && (
-                  <option value={r.siteKey}>
-                    Stored ({storedFromKey(r.siteKey)!.latDeg}, {storedFromKey(r.siteKey)!.lonEastDeg})
-                  </option>
-                )}
-                {sites.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </fieldset>
-        );
-      })}
+      {rows.map((r, i) => renderRow(r, parsed[i]!, i + 1, `Observation ${i + 1}`, (q) => patch(i, q)))}
+      <label>
+        <input
+          type="checkbox"
+          checked={checkRow !== null}
+          onChange={(e) => commit(rows, e.target.checked ? { ...EMPTY_ROW } : null)}
+        />
+        Add a 4th check observation (optional)
+      </label>
+      {checkRow && checkParsed && renderRow(checkRow, checkParsed, 'check', 'Check observation', patchCheck)}
+      {dupError && (
+        <p role="alert" className="error" data-testid="check-error">
+          {dupError}
+        </p>
+      )}
       {error && (
         <p role="alert" className="error" data-testid="set-error">
           {error}
@@ -394,6 +423,7 @@ function SyntheticPanel() {
   const [siteVal, setSiteVal] = useState(GEO);
   const [sigma, setSigma] = useState('0');
   const [seed, setSeed] = useState('1');
+  const [nObs, setNObs] = useState('3');
   const [err, setErr] = useState<string | null>(null);
 
   const generate = () => {
@@ -410,7 +440,7 @@ function SyntheticPanel() {
       const site = siteVal === GEO ? null : copySite(sites.find((s) => s.id === siteVal));
       if (siteVal !== GEO && !site) throw new Error('Selected site no longer exists.');
       const g = seededGaussian(sd);
-      const observations: Observation[] = [0, 1, 2].map((k) => {
+      const all: Observation[] = (nObs === '4' ? [0, 1, 2, 3] : [0, 1, 2]).map((k) => {
         const jd = jd0 + k * sp;
         const p = predict(entry.body, jd, site);
         let ra = p.raRad;
@@ -422,14 +452,17 @@ function SyntheticPanel() {
           dec += nDec;
         }
         if (ra < 0 || ra >= 2 * Math.PI) ra = ((ra % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-        return { jdUtc: jd, raRad: ra, decRad: dec, site: site ? { ...site } : null, label: `Synthetic ${k + 1}` };
+        return { jdUtc: jd, raRad: ra, decRad: dec, site: site ? { ...site } : null, label: k === 3 ? 'Synthetic check' : `Synthetic ${k + 1}` };
       });
+      const observations = all.slice(0, 3);
+      const check = all[3];
       const st = useStore.getState();
       const id = st.addSet({
         name: `${entry.name} synthetic ${start.slice(0, 10)}`,
         targetId: entry.id,
         synthetic: true,
         observations,
+        ...(check ? { check } : {}),
       });
       st.setActiveSet(id);
       setErr(null);
@@ -472,6 +505,13 @@ function SyntheticPanel() {
       <label>
         Noise sigma (arcsec)
         <input type="number" value={sigma} onChange={(e) => setSigma(e.target.value)} />
+      </label>
+      <label>
+        Observations
+        <select value={nObs} onChange={(e) => setNObs(e.target.value)}>
+          <option value="3">3</option>
+          <option value="4">4 (3 + check)</option>
+        </select>
       </label>
       <label>
         Seed

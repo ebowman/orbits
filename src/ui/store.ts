@@ -15,6 +15,10 @@ export type ObservationSet = {
   /** Raw per-slot input text; observations is [] unless all 3 slots are valid. */
   drafts?: [RowDraft, RowDraft, RowDraft];
   observations: Observation[];
+  /** Optional 4th (check) observation input text; never used by the IOD solvers. */
+  checkDraft?: RowDraft;
+  /** Parsed check observation; set only when checkDraft is fully valid. */
+  check?: Observation;
 };
 
 export function newId(): string {
@@ -115,6 +119,31 @@ function parseSite(v: unknown, where: string): Site | null {
   return { latDeg: v.latDeg, lonEastDeg: v.lonEastDeg, elevM: v.elevM };
 }
 
+function parseDraft(d: unknown, bad: () => Error): RowDraft {
+  if (!isObj(d)) throw bad();
+  const { utc, ra, dec, siteKey } = d;
+  if (typeof utc !== 'string' || typeof ra !== 'string' || typeof dec !== 'string' || typeof siteKey !== 'string') throw bad();
+  return { utc, ra, dec, siteKey };
+}
+
+function parseObs(o: unknown, where: string): Observation {
+  if (!isObj(o)) throw new Error(`${where} is not an object.`);
+  for (const k of ['jdUtc', 'raRad', 'decRad'] as const) {
+    if (!fin(o[k])) throw new Error(`${where}: "${k}" must be a finite number.`);
+  }
+  if (o.label !== undefined && typeof o.label !== 'string') {
+    throw new Error(`${where}: "label" must be a string.`);
+  }
+  const obs: Observation = {
+    jdUtc: o.jdUtc as number,
+    raRad: o.raRad as number,
+    decRad: o.decRad as number,
+    site: parseSite(o.site ?? null, where),
+  };
+  if (o.label !== undefined) obs.label = o.label as string;
+  return obs;
+}
+
 /** Validate JSON produced by exportSet, add it to the store with a fresh id, return the new id. */
 export function importSet(json: string): string {
   let data: unknown;
@@ -142,38 +171,25 @@ export function importSet(json: string): string {
   if (raw.drafts !== undefined) {
     const bad = () => new Error('Import failed: set.drafts must be an array of 3 objects with string utc, ra, dec, siteKey.');
     if (!Array.isArray(raw.drafts) || raw.drafts.length !== 3) throw bad();
-    const ds = raw.drafts.map((d: unknown) => {
-      if (!isObj(d)) throw bad();
-      const { utc, ra, dec, siteKey } = d;
-      if (typeof utc !== 'string' || typeof ra !== 'string' || typeof dec !== 'string' || typeof siteKey !== 'string') throw bad();
-      return { utc, ra, dec, siteKey };
-    });
-    drafts = ds as [RowDraft, RowDraft, RowDraft];
+    drafts = raw.drafts.map((d: unknown) => parseDraft(d, bad)) as [RowDraft, RowDraft, RowDraft];
   }
+  let checkDraft: RowDraft | undefined;
+  if (raw.checkDraft !== undefined) {
+    checkDraft = parseDraft(raw.checkDraft, () => new Error('Import failed: set.checkDraft must be an object with string utc, ra, dec, siteKey.'));
+  }
+  let check: Observation | undefined;
+  if (raw.check !== undefined) check = parseObs(raw.check, 'Import failed: check observation');
   if (!Array.isArray(raw.observations)) {
     throw new Error('Import failed: set.observations must be an array.');
   }
-  const observations: Observation[] = raw.observations.map((o: unknown, i: number) => {
-    const where = `Import failed: observation ${i + 1}`;
-    if (!isObj(o)) throw new Error(`${where} is not an object.`);
-    for (const k of ['jdUtc', 'raRad', 'decRad'] as const) {
-      if (!fin(o[k])) throw new Error(`${where}: "${k}" must be a finite number.`);
-    }
-    if (o.label !== undefined && typeof o.label !== 'string') {
-      throw new Error(`${where}: "label" must be a string.`);
-    }
-    const obs: Observation = {
-      jdUtc: o.jdUtc as number,
-      raRad: o.raRad as number,
-      decRad: o.decRad as number,
-      site: parseSite(o.site ?? null, where),
-    };
-    if (o.label !== undefined) obs.label = o.label as string;
-    return obs;
-  });
+  const observations: Observation[] = raw.observations.map((o: unknown, i: number) =>
+    parseObs(o, `Import failed: observation ${i + 1}`),
+  );
   const set: Omit<ObservationSet, 'id'> = { name: raw.name, observations };
   if (raw.targetId !== undefined) set.targetId = raw.targetId;
   if (raw.synthetic !== undefined) set.synthetic = raw.synthetic;
   if (drafts) set.drafts = drafts;
+  if (checkDraft) set.checkDraft = checkDraft;
+  if (check) set.check = check;
   return useStore.getState().addSet(set);
 }
