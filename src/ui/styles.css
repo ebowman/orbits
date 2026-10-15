@@ -40,3 +40,11 @@ button { background: var(--panel); color: var(--fg); border: 1px solid var(--bor
 .sev-warn { color: #d9a000; }
 .sev-bad { color: #d64545; }
 .ambiguous-banner { border: 2px solid #d9a000; padding: 0.5rem 0.75rem; font-weight: 700; margin: 1rem 0; }
+
+/* Learn walkthroughs */
+.walk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.walk-nav { display: flex; gap: 0.5rem; align-items: center; }
+.walk-nav input[type='range'] { flex: 1; }
+.walk-values td { text-align: left; word-break: break-all; font-family: monospace; font-size: 0.85em; }
+.walk-plot { width: 100%; max-width: 28rem; height: auto; background: transparent; }
+@media (max-width: 799px) { .walk-grid { grid-template-columns: 1fr; } }
