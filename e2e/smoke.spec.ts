@@ -27,6 +27,9 @@ async function solveSyntheticCeres(page: Page, base: string) {
   const text = (await cell.textContent()) ?? '';
   const pct = parseFloat(text.replace(/[^0-9eE+.-]/g, ''));
   expect(pct).toBeLessThan(1); // Gauss a within 1% of the catalog value
+  await expect(page.getByRole('columnheader', { name: /Least squares \(3 obs\)/ }).first()).toBeVisible();
+  const rms = parseFloat((await page.getByTestId('lsq-rms').textContent()) ?? '');
+  expect(rms).toBeLessThan(1); // LSQ RMS (arcsec) on a noise-free synthetic set
 }
 
 async function visitAll(page: Page, base: string) {

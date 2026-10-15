@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gauss } from '../src/astro/iod/gauss';
 import { laplace } from '../src/astro/iod/laplace';
+import { differentialCorrection } from '../src/astro/iod/lsq';
 import type { IODInput, IODResult, Observation } from '../src/astro/iod/types';
 import type { OrbitalElements } from '../src/astro/elements';
 import type { Site } from '../src/astro/observer';
@@ -149,6 +150,39 @@ describe('real-data IOD on Horizons opposition fixtures', () => {
       });
       it(`${tag} laplace classical`, () => {
         check((ri) => laplace(obs, { iterate: false, rootIndex: ri }), truthRow, TOL_CLASSICAL, tag + ' laplace-classical', b.name, b.tag, spacing, 'laplace-classical');
+      });
+    }
+  }
+});
+
+describe('real-data least squares with a 4th observation (3 IOD dates + one more day)', () => {
+  for (const b of BODIES) {
+    const fx = load<Fixture>(`${b.name}-opposition-${b.tag}.json`);
+    const els = load<{ rows: ElRow[] }>(`${b.name}-opposition-elements.json`);
+    for (const [spacing, days] of SPACINGS) {
+      const truthRow = els.rows.find((r) => r.spacingDays === spacing)!;
+      const tag = `${b.name}/${b.tag}/${spacing}d`;
+      it(`${tag} LSQ(4 obs) is no worse than Gauss(3 obs)`, () => {
+        const fourth = days[2]! + spacing; // t3 + (t3 - t2)
+        expect(fx.rows[fourth], `fixture has row ${fourth}`).toBeDefined();
+        const obs4 = buildObs(fx, [...days, fourth]);
+        const g = gauss(obs4.slice(0, 3) as IODInput);
+        const fit = differentialCorrection(obs4, { r: g.r2, v: g.v2, jdTt: g.jdTt2 });
+        const xg = errs(g.elements, truthAt(truthRow, g.jdTt2));
+        const xl = errs(fit.elements!, truthAt(truthRow, g.jdTt2));
+        summary.push({
+          body: b.name, fixture: b.tag, spacing, method: 'lsq-4obs',
+          'a rel': +xl.aRel.toExponential(2), e: +xl.e.toExponential(2), 'i deg': +xl.iDeg.toExponential(2),
+          converged: String(fit.converged), warnings: fit.warnings.length, note: `rms ${fit.rmsArcsec.toFixed(2)} arcsec; gauss a ${xg.aRel.toExponential(2)} e ${xg.e.toExponential(2)} i ${xg.iDeg.toExponential(2)}`,
+        });
+        console.info(`LSQ4 ${tag}: rms ${fit.rmsArcsec.toFixed(2)}" iters ${fit.iterations} | LSQ a ${xl.aRel.toExponential(2)} e ${xl.e.toExponential(2)} i ${xl.iDeg.toExponential(2)} | Gauss a ${xg.aRel.toExponential(2)} e ${xg.e.toExponential(2)} i ${xg.iDeg.toExponential(2)}`);
+        expect(fit.converged).toBe(true);
+        expect(within(xl, TOL_REFINED)).toBe(true);
+        // Real-data outcome is mixed, not uniformly better: a is within 3e-5 of Gauss in every case, e is worse by up to
+        // 1.7e-4 (vesta 5d), i is equal or better. Epsilons are the measured worst-case excess, rounded up.
+        expect(xl.aRel).toBeLessThanOrEqual(xg.aRel + 3e-5);
+        expect(xl.e).toBeLessThanOrEqual(xg.e + 2e-4);
+        expect(xl.iDeg).toBeLessThanOrEqual(xg.iDeg + 1e-4);
       });
     }
   }

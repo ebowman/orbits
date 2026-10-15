@@ -6,6 +6,7 @@ import {
   ELEMENT_KEYS,
   ELEMENT_LABEL,
   FORWARD_DAYS,
+  LSQ_ID,
   METHOD_IDS,
   METHOD_LABEL,
   candidates,
@@ -15,6 +16,11 @@ import {
   elementError,
   elementValues,
   forwardPredictions,
+  lowestRmsRun,
+  lsqForCandidates,
+  lsqLabel,
+  lsqObservations,
+  runLsq,
   methodElements,
   propagateElements,
   residuals,
@@ -91,7 +97,16 @@ export default function SolvePage() {
         }
       }
     }
-    return { obs, check, outcomes, jd, cands, candResid: resid, best, ratio };
+    // Least squares over all observations (3 + optional check), seeded from each surviving candidate.
+    const lsqObs = lsqObservations(obs, check);
+    const lsqRuns = cands && cands.survivors.length > 0 ? lsqForCandidates(lsqObs, cands.survivors, jd) : [];
+    let lsqSel = lsqRuns.find((r) => r.selected) ?? null;
+    if (!lsqSel && cands === null && outcomes.gauss.ok) {
+      const g = outcomes.gauss.result;
+      lsqSel = { rootIndex: g.chosenRoot, r2: g.chosenRoot, selected: true, ...runLsq(lsqObs, g.elements, jd) };
+    }
+    const lsqBest = check && lsqRuns.length > 1 ? lowestRmsRun(lsqRuns) : null;
+    return { obs, check, outcomes, jd, cands, candResid: resid, best, ratio, lsqObsCount: lsqObs.length, lsqRuns, lsqSel, lsqBest };
   }, [obsKey, checkKey, pickedR2]);
 
   const analysisKey = obsKey + '|' + checkKey + '|' + pickedR2 + '|' + (catEl ? catEl.a : 'none');
@@ -99,7 +114,7 @@ export default function SolvePage() {
     if (!analysis) return null;
     const { obs, outcomes, jd } = analysis;
     const catProp = catEl ? propagateElements(catEl, jd) : null;
-    const cols = METHOD_IDS.map((id) => {
+    const methodCols = METHOD_IDS.map((id) => {
       const o = outcomes[id];
       const el = methodElements(o);
       let values: Record<ElementKey, number> | null = null;
@@ -117,8 +132,33 @@ export default function SolvePage() {
           err = e instanceof Error ? e.message : String(e);
         }
       }
-      return { id, o, values, resid, fwd, checkRes, err };
+      return { id: id as string, label: METHOD_LABEL[id], values, resid, fwd, checkRes, err };
     });
+    const lsq = analysis.lsqSel;
+    const lsqEl = lsq?.fit?.elements ?? null;
+    let lsqValues: Record<ElementKey, number> | null = null;
+    let lsqFwd = null;
+    let lsqCheck: number | null = null;
+    let lsqErr: string | null = lsq ? (lsq.error ?? (lsq.fit && !lsqEl ? 'Final state could not be converted to elements' : null)) : 'No Gauss/Laplace seed available';
+    if (lsqEl) {
+      try {
+        lsqValues = elementValues(propagateElements(lsqEl, jd));
+        lsqFwd = forwardPredictions(lsqEl, obs, catEl);
+        if (analysis.check) lsqCheck = checkResidualRad(lsqEl, analysis.check);
+      } catch (e) {
+        lsqErr = e instanceof Error ? e.message : String(e);
+      }
+    }
+    const lsqCol = {
+      id: LSQ_ID as string,
+      label: lsqLabel(analysis.lsqObsCount),
+      values: lsqValues,
+      resid: lsq?.fit && lsqEl ? lsq.fit.residuals.slice(0, 3) : null,
+      fwd: lsqFwd,
+      checkRes: lsqCheck,
+      err: lsqErr,
+    };
+    const cols = [...methodCols, lsqCol];
     const catValues = catProp ? elementValues(catProp) : null;
     const catFwd = catEl ? forwardPredictions(catEl, obs, null) : null;
     return { cols, catValues, catFwd, catProp };
@@ -171,7 +211,7 @@ export default function SolvePage() {
     );
   }
 
-  const { obs, check, outcomes, jd, cands, candResid, best, ratio } = analysis;
+  const { obs, check, outcomes, jd, cands, candResid, best, ratio, lsqRuns, lsqSel, lsqBest } = analysis;
   const multi = cands !== null && cands.survivors.length > 1;
   const rejected = cands ? cands.all.filter((r) => !r.accepted) : [];
   const catCol = view.catValues;
@@ -221,7 +261,7 @@ export default function SolvePage() {
           <tr>
             <th>Element</th>
             {view.cols.map((c) => (
-              <th key={c.id}>{METHOD_LABEL[c.id]}</th>
+              <th key={c.id}>{c.label}</th>
             ))}
             {catCol && <th>Catalog ({target?.name})</th>}
           </tr>
@@ -279,6 +319,28 @@ export default function SolvePage() {
             </li>
           );
         })}
+        <li data-testid="diag-lsq">
+          <strong>{lsqLabel(analysis.lsqObsCount)}</strong>:{' '}
+          {lsqSel?.fit ? (
+            <>
+              {lsqSel.fit.converged ? 'converged' : 'NOT converged'}
+              {` (${lsqSel.fit.iterations} iterations, RMS `}
+              <span data-testid="lsq-rms">{lsqSel.fit.rmsArcsec.toFixed(3)}</span>
+              {' arcsec)'}
+              {lsqSel.fit.warnings.length > 0 && (
+                <ul>
+                  {lsqSel.fit.warnings.map((w, i) => (
+                    <li key={i} className="warning">
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <span className="error">failed: {lsqSel?.error ?? 'no seed solution'}</span>
+          )}
+        </li>
       </ul>
 
       {cands && (cands.survivors.length > 1 || rejected.length > 0) && (
@@ -292,6 +354,7 @@ export default function SolvePage() {
                 <th>e</th>
                 <th>i (deg)</th>
                 {check && <th>Check obs residual</th>}
+                <th>LSQ RMS (arcsec)</th>
                 <th />
               </tr>
             </thead>
@@ -308,6 +371,12 @@ export default function SolvePage() {
                       </td>
                     ))}
                     {check && <td data-testid={`candidate-check-${c.rootIndex}`}>{formatCheckResidual(candResid.get(c.rootIndex) ?? null)}</td>}
+                    <td data-testid={`candidate-lsq-${c.rootIndex}`}>
+                      {(() => {
+                        const f = lsqRuns.find((r) => r.rootIndex === c.rootIndex)?.fit;
+                        return f ? `${f.rmsArcsec.toFixed(3)}${f.converged ? '' : ' (not converged)'}` : '—';
+                      })()}
+                    </td>
                     <td>
                       {c.selected ? (
                         'selected'
@@ -322,6 +391,13 @@ export default function SolvePage() {
               })}
             </tbody>
           </table>
+          {check && best && lsqBest && lsqBest.rootIndex !== best.rootIndex && (
+            <div role="alert" className="ambiguous-banner" data-testid="lsq-disagreement">
+              Disagreement: the check-observation residual favours the root with r2 = {best.r2.toFixed(4)} AU, but least squares over all{' '}
+              {analysis.lsqObsCount} observations fits best (RMS {lsqBest.fit!.rmsArcsec.toFixed(3)} arcsec) from the root with r2 ={' '}
+              {lsqBest.r2.toFixed(4)} AU. Treat the choice as uncertain.
+            </div>
+          )}
           {rejected.length > 0 && (
             <details>
               <summary>Rejected roots ({rejected.length})</summary>
@@ -343,7 +419,7 @@ export default function SolvePage() {
           <tr>
             <th>Observation</th>
             {view.cols.map((c) => (
-              <th key={c.id}>{METHOD_LABEL[c.id]} (RA·cosδ, Dec)</th>
+              <th key={c.id}>{c.label} (RA·cosδ, Dec)</th>
             ))}
           </tr>
         </thead>
@@ -358,6 +434,12 @@ export default function SolvePage() {
               ))}
             </tr>
           ))}
+          <tr>
+            <td>RMS (arcsec, all {analysis.lsqObsCount} obs)</td>
+            {view.cols.map((c) => (
+              <td key={c.id}>{c.id === LSQ_ID && lsqSel?.fit ? lsqSel.fit.rmsArcsec.toFixed(3) : '—'}</td>
+            ))}
+          </tr>
           {check && (
             <tr>
               <td>Check obs residual</td>
@@ -381,7 +463,7 @@ export default function SolvePage() {
           <tr>
             <th>Days after last</th>
             {view.cols.map((c) => (
-              <th key={c.id}>{METHOD_LABEL[c.id]}</th>
+              <th key={c.id}>{c.label}</th>
             ))}
             {view.catFwd && <th>Catalog</th>}
           </tr>

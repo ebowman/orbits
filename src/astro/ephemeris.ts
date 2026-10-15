@@ -7,6 +7,7 @@ import { C_AU_PER_DAY } from './constants';
 import type { OrbitalElements } from './elements';
 import { unitToRadec } from './frames';
 import { planetHeliocentric, type PlanetName } from './planets';
+import { propagate } from './propagate';
 import { elementsToState } from './state';
 import { jdUtcToTt } from './time';
 import { observerHeliocentric, type Site } from './observer';
@@ -39,12 +40,24 @@ function bodyPosition(body: EphemerisBody, jdTt: number): Vec3 {
 
 /** Predict astrometric RA/Dec of a body seen from `site` (null = geocenter) at UTC Julian date jdUtc. */
 export function predict(body: EphemerisBody, jdUtc: number, site: Site | null): Prediction {
+  return predictWith((t) => bodyPosition(body, t), jdUtc, site);
+}
+
+/**
+ * Same as `predict` (identical light-time, observer and frame conventions) for a two-body heliocentric
+ * state (J2000 equatorial, AU and AU/day) given at epoch `jdTtEpoch`. Used by the least-squares fit.
+ */
+export function predictFromState(r: Vec3, v: Vec3, jdTtEpoch: number, jdUtc: number, site: Site | null): Prediction {
+  return predictWith((t) => propagate(r, v, t - jdTtEpoch).r, jdUtc, site);
+}
+
+function predictWith(bodyAt: (jdTt: number) => Vec3, jdUtc: number, site: Site | null): Prediction {
   const jdTt = jdUtcToTt(jdUtc);
   const rObserver = observerHeliocentric(site, jdTt, jdUtc);
-  let rBody = bodyPosition(body, jdTt);
+  let rBody = bodyAt(jdTt);
   let tau = norm(sub(rBody, rObserver)) / C_AU_PER_DAY;
   for (let i = 0; i < 10; i++) {
-    rBody = bodyPosition(body, jdTt - tau);
+    rBody = bodyAt(jdTt - tau);
     const next = norm(sub(rBody, rObserver)) / C_AU_PER_DAY;
     const done = Math.abs(next - tau) < 1e-10;
     tau = next;

@@ -1,5 +1,6 @@
 import {
   angularSeparation,
+  differentialCorrection,
   elementsToState,
   gauss,
   jdUtcToTt,
@@ -10,6 +11,7 @@ import {
   stateToElements,
   type IODInput,
   type IODResult,
+  type LsqResult,
   type OrbitalElements,
   type Observation,
 } from '@astro';
@@ -260,4 +262,41 @@ export function formatCheckResidual(rad: number | null): string {
   if (rad === null || !Number.isFinite(rad)) return '—';
   const as = rad * ARCSEC;
   return as < 3600 ? `${as.toFixed(as < 10 ? 3 : 1)}″` : `${(rad * DEG).toFixed(3)}°`;
+}
+
+/** One least-squares fit seeded from one candidate root (state taken from the candidate's elements at the common epoch). */
+export type LsqRun = { rootIndex: number; r2: number; selected: boolean; fit: LsqResult | null; error: string | null };
+
+/** Observations used by the least-squares fit: the three IOD observations plus the optional check observation. */
+export const lsqObservations = (obs: IODInput, check: Observation | null): Observation[] => (check ? [...obs, check] : [...obs]);
+
+export const LSQ_ID = 'lsq';
+export const lsqLabel = (n: number): string => `Least squares (${n} obs)`;
+
+/** Differential correction from one candidate's elements; never throws (errors become `error`). */
+export function runLsq(observations: Observation[], seed: OrbitalElements, jdTt: number): { fit: LsqResult | null; error: string | null } {
+  try {
+    const s = elementsToState(propagateElements(seed, jdTt), jdTt);
+    return { fit: differentialCorrection(observations, { r: s.r, v: s.v, jdTt }), error: null };
+  } catch (e) {
+    return { fit: null, error: errMsg(e) };
+  }
+}
+
+/** Run least squares from every surviving candidate. */
+export function lsqForCandidates(observations: Observation[], survivors: Candidate[], jdTt: number): LsqRun[] {
+  return survivors.map((c) => ({ rootIndex: c.rootIndex, r2: c.r2, selected: c.selected, ...runLsq(observations, c.elements, jdTt) }));
+}
+
+/**
+ * Root with the lowest least-squares RMS among converged runs (only meaningful when a check observation
+ * makes the fit over-determined), or null if no run converged.
+ */
+export function lowestRmsRun(runs: LsqRun[]): LsqRun | null {
+  let best: LsqRun | null = null;
+  for (const r of runs) {
+    if (!r.fit || !r.fit.converged || !Number.isFinite(r.fit.rmsArcsec)) continue;
+    if (!best || r.fit.rmsArcsec < best.fit!.rmsArcsec) best = r;
+  }
+  return best;
 }
