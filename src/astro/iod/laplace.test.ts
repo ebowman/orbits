@@ -143,7 +143,7 @@ describe('laplace IOD, noiseless synthetic data', () => {
         for (const id of STEP_IDS) expect(ids).toContain(id);
         expect(ids.some((id) => /^iteration-\d+$/.test(id))).toBe(true);
         const it1 = res.trace.find((t) => t.id === 'iteration-1');
-        for (const key of ['rho', 'r1', 'r2', 'r3', 'f1', 'g1', 'f3', 'g3']) expect(it1?.values).toHaveProperty(key);
+        for (const key of ['rho', 'r1', 'r2', 'r3', 'f1', 'g1', 'f3', 'g3', 'jdTt2']) expect(it1?.values).toHaveProperty(key);
         const classical = res.trace.find((t) => t.id === 'classical-result');
         expect(classical?.values.a).toBeCloseTo(cls.elements.a, 10);
         expect(cls.trace.map((t) => t.id).some((id) => id.startsWith('iteration-'))).toBe(false);

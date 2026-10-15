@@ -102,6 +102,13 @@ describe('ObservePage', () => {
     expect(() => parseUtcInput('nope')).toThrow();
   });
 
+  it('datetime-local inputs accept millisecond precision (step=0.001)', () => {
+    setup();
+    const inputs = document.querySelectorAll('input[type="datetime-local"]');
+    expect(inputs.length).toBeGreaterThan(0);
+    inputs.forEach((i) => expect(i.getAttribute('step')).toBe('0.001'));
+  });
+
   it('shows geolocation denied message', () => {
     vi.stubGlobal('navigator', {
       geolocation: { getCurrentPosition: (_ok: unknown, bad: (e: { code: number; message: string }) => void) => bad({ code: 1, message: 'denied' }) },

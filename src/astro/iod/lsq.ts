@@ -27,7 +27,11 @@ export type LsqInitial = { r: Vec3; v: Vec3; jdTt: number };
 export type LsqOptions = {
   /** Maximum Gauss-Newton iterations (default 20). */
   maxIter?: number;
-  /** Convergence: largest relative parameter step (default 1e-8; also stops on relative chi2 change < 1e-8). */
+  /**
+   * Convergence tolerance on the full-step relative size max|y| (default 1e-8). Iteration also stops when the
+   * predicted chi2 reduction is negligible (pred < 1e-4*chi2 + N*(1e-4 arcsec)^2) or a full accepted step
+   * changes chi2 by a relative amount < 1e-8.
+   */
   tol?: number;
   /** Per-observation weights (default all 1); applied to both RA and Dec of that observation. */
   weights?: number[];
@@ -149,7 +153,6 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
     warnings.push('Initial state could not be evaluated (non-finite or failing prediction); no correction attempted.');
   } else {
     let c = cost(res, w);
-    let stalls = 0;
     for (let it = 0; it < maxIter; it++) {
       iterations = it + 1;
       const J = jacobian(obs, x, jdTt, scales);
@@ -196,7 +199,6 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
       //  2. pred < 1e-4 * chi2 + N * (1e-4 arcsec in rad)^2, i.e. no meaningful improvement remains;
       //  3. the full-step relative size max|y| < tol.
       // Not converged: halving exhausted while pred is NOT small (stall away from the minimum).
-      // The noise-floor stop (2 stalled iterations) counts as converged only when pred is also small.
       const relFull = Math.max(...y.map((q) => Math.abs(q)));
       const pred = y.reduce((sum, q, k) => sum + q * g[k]!, 0);
       const predSmall = Number.isFinite(pred) && pred < 1e-4 * c + N * (1e-4 / ARCSEC) ** 2;
@@ -212,13 +214,6 @@ export function differentialCorrection(obs: Observation[], initial: LsqInitial, 
       c = accepted.c;
       if ((fullStep && relChi < 1e-8) || predSmall || relFull < tol) {
         converged = true;
-        break;
-      }
-      // Noise floor: chi2 no longer decreasing for 2 consecutive iterations.
-      stalls = relChi < 1e-8 ? stalls + 1 : 0;
-      if (stalls >= 2 && predSmall) {
-        converged = true;
-        warnings.push('Stopped at the numerical noise floor (chi2 no longer decreasing).');
         break;
       }
     }

@@ -23,13 +23,12 @@ import type { Site } from './observer';
 const ARCSEC = Math.PI / (180 * 3600);
 
 export type Solver = (obs: IODInput) => IODResult;
-export type Solvers = { gauss: Solver; laplace: Solver; gaussFirst: Solver };
+export type Solvers = { gauss: Solver; laplace: Solver };
 
-/** Default solvers: Gauss, classical (non-iterated) Laplace; gaussFirst reuses Gauss and reads its first approximation. */
+/** Default solvers: Gauss, classical (non-iterated) Laplace. Gauss's first approximation is read from the same Gauss run's trace. */
 export const defaultSolvers: Solvers = {
   gauss: (obs) => gauss(obs),
   laplace: (obs) => laplace(obs, { iterate: false }),
-  gaussFirst: (obs) => gauss(obs),
 };
 
 export type SweepParams = {
@@ -97,7 +96,7 @@ function aOfFirst(r: IODResult): number | null {
   return validA(el.a, el.e);
 }
 
-/** Computes one grid cell (spacing index i, noise index j). Deterministic in (seed, i, j). */
+/** Computes one grid cell (spacing index i, noise index j). Deterministic in (seed, spacing, noise) values, not grid position. */
 export function sweepCell(p: SweepParams, i: number, j: number, solvers: Solvers = defaultSolvers): SweepCell {
   const spacing = p.spacings[i]!;
   const noise = p.noiseArcsec[j]!;
@@ -106,7 +105,10 @@ export function sweepCell(p: SweepParams, i: number, j: number, solvers: Solvers
     const jd = p.startJd + k * spacing;
     return { jd, pred: predict(p.el, jd, site) };
   });
-  const g = seededGaussian((Math.imul(p.seed | 0, 1000003) + Math.imul(i + 1, 7919) + Math.imul(j + 1, 104729)) >>> 0);
+  // Seed from the cell's (spacing, noise) VALUES so a cell gives identical results regardless of grid layout.
+  const sKey = Math.round(spacing * 1e6) | 0;
+  const nKey = Math.round(noise * 1e6) | 0;
+  const g = seededGaussian((Math.imul(p.seed | 0, 1000003) + Math.imul(sKey, 7919) + Math.imul(nKey ^ 0x9e3779b1, 104729)) >>> 0);
   const errs = { gauss: [] as number[], laplace: [] as number[], first: [] as number[] };
   const fails = { gauss: 0, laplace: 0, first: 0 };
   for (let t = 0; t < p.trials; t++) {
@@ -120,18 +122,24 @@ export function sweepCell(p: SweepParams, i: number, j: number, solvers: Solvers
       ra = ((ra % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
       return { jdUtc: jd, raRad: ra, decRad: dec, site: site ? { ...site } : null, label: `sweep ${k + 1}` };
     }) as IODInput;
-    const run = (key: 'gauss' | 'laplace' | 'first', solve: Solver, pick: (r: IODResult) => number | null) => {
-      try {
-        const a = pick(solve(obs));
-        if (a === null) fails[key]++;
-        else errs[key].push(Math.abs(a - p.el.a) / p.el.a);
-      } catch {
-        fails[key]++;
-      }
+    const record = (key: 'gauss' | 'laplace' | 'first', a: number | null) => {
+      if (a === null) fails[key]++;
+      else errs[key].push(Math.abs(a - p.el.a) / p.el.a);
     };
-    run('gauss', solvers.gauss, aOfResult);
-    run('laplace', solvers.laplace, aOfResult);
-    run('first', solvers.gaussFirst, aOfFirst);
+    // One Gauss run per trial feeds both the iterated result and the first approximation.
+    try {
+      const r = solvers.gauss(obs);
+      record('gauss', aOfResult(r));
+      record('first', aOfFirst(r));
+    } catch {
+      fails.gauss++;
+      fails.first++;
+    }
+    try {
+      record('laplace', aOfResult(solvers.laplace(obs)));
+    } catch {
+      fails.laplace++;
+    }
   }
   const n = Math.max(1, p.trials);
   return {

@@ -173,6 +173,15 @@ describe('LearnLaplacePage', () => {
     expect(screen.getByTestId('sky-scale').textContent).toMatch(/deg on sky/);
   });
 
+  it('draws no L-prime / L-double-prime arrows on the interpolation step', () => {
+    render(<LearnLaplacePage />);
+    goto('Interpolating the line of sight');
+    const svg = screen.getByTestId('sky-inset');
+    expect(svg.querySelector('[data-testid="arrow-Lp"]')).toBeNull();
+    expect(svg.querySelector('[data-testid="arrow-Lpp"]')).toBeNull();
+    expect(svg.querySelector('[data-testid="sky-curve"]')).not.toBeNull();
+  });
+
   it('steps through every step without console errors and shows the classical vs refined table', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<LearnLaplacePage />);
@@ -207,18 +216,25 @@ describe('LearnLaplacePage', () => {
 });
 
 describe('SkyInset', () => {
-  it('unwraps RA across 0/360 so the curve stays compact', () => {
+  it('unwraps RA across the atan2 branch cut (180 deg) so adjacent points stay close', () => {
     const v = (raDeg: number): [number, number, number] => {
       const a = (raDeg * Math.PI) / 180;
       return [Math.cos(a), Math.sin(a), 0];
     };
+    // 179, 180.5, 182 deg: atan2 returns +179, -179.5, -178, so the raw RA differences are ~358 deg without wrapPi.
     const { container } = render(
-      <SkyInset L={[v(359), v(0.5), v(2)]} tau1={-10} tau3={10} Lp={[0, 0.01, 0]} Lpp={[0, 0, 0.001]} />,
+      <SkyInset L={[v(179), v(180.5), v(182)]} tau1={-10} tau3={10} Lp={[0, 0.01, 0]} Lpp={[0, 0, 0.001]} />,
     );
+    const cxs = [...container.querySelectorAll('[data-testid="sky-point"] circle')].map((c) => Number(c.getAttribute('cx')));
+    expect(cxs).toHaveLength(3);
+    const d12 = Math.abs(cxs[0]! - cxs[1]!);
+    const d23 = Math.abs(cxs[1]! - cxs[2]!);
+    expect(d12).toBeGreaterThan(0);
+    expect(d12 / d23).toBeGreaterThan(0.5); // 1.5 deg vs 1.5 deg apart
+    expect(d12 / d23).toBeLessThan(2);
     const d = container.querySelector('[data-testid="sky-curve"]')!.getAttribute('d')!;
     const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map((m) => Number(m[1]));
-    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(400); // would be ~360 deg wide, off-canvas, without unwrapping
-    expect(Math.max(...xs)).toBeLessThanOrEqual(400);
     expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(400);
   });
 });

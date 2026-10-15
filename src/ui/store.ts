@@ -83,7 +83,9 @@ export const safeStorage = {
   },
 };
 
-const storedKeyOf = (s: Site) => `stored:${s.latDeg},${s.lonEastDeg},${s.elevM}`;
+export const STORED_PREFIX = 'stored:';
+/** Draft siteKey that carries a site's coordinates directly (used when the saved site was removed). */
+export const storedSiteKey = (s: Site) => `${STORED_PREFIX}${s.latDeg},${s.lonEastDeg},${s.elevM}`;
 
 export const useStore = create<State & Actions>()(
   persist(
@@ -105,7 +107,7 @@ export const useStore = create<State & Actions>()(
           const gone = s.sites.find((x) => x.id === id);
           // Drafts referencing the removed site keep its coordinates via a 'stored:' key.
           const fix = (d: RowDraft): RowDraft =>
-            gone && d.siteKey === id ? { ...d, siteKey: storedKeyOf(gone) } : d;
+            gone && d.siteKey === id ? { ...d, siteKey: storedSiteKey(gone) } : d;
           return {
             sites: s.sites.filter((x) => x.id !== id),
             selectedSiteId: s.selectedSiteId === id ? null : s.selectedSiteId,
@@ -239,9 +241,6 @@ export function importSet(json: string): string {
   );
   if (raw.observations.length !== 0 && raw.observations.length !== 3) {
     throw new Error(`Import failed: set.observations must have 0 or 3 entries (got ${raw.observations.length}).`);
-  }
-  if (drafts && raw.observations.length === 3 && drafts.length !== 3) {
-    throw new Error('Import failed: set.drafts must have 3 entries when observations are present.');
   }
   const set: Omit<ObservationSet, 'id'> = { name: raw.name, observations };
   if (raw.targetId !== undefined) set.targetId = raw.targetId;

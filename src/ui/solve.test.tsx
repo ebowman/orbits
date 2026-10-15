@@ -31,7 +31,7 @@ vi.mock('./solve/compute', async (orig) => {
 
 vi.mock('@astro', async (orig) => {
   const mod = await orig<typeof import('@astro')>();
-  return { ...mod, gauss: vi.fn(mod.gauss), differentialCorrection: vi.fn(mod.differentialCorrection) };
+  return { ...mod, gauss: vi.fn(mod.gauss), laplace: vi.fn(mod.laplace), differentialCorrection: vi.fn(mod.differentialCorrection) };
 });
 
 const realCheck = (await vi.importActual<typeof import('./solve/compute')>('./solve/compute')).checkResidualRad;
@@ -43,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.mocked(astro.gauss).mockClear();
+  vi.mocked(astro.laplace).mockClear();
   vi.mocked(astro.differentialCorrection).mockReset();
   vi.mocked(compute.checkResidualRad).mockImplementation(realCheck);
 });
@@ -183,13 +184,18 @@ describe('SolvePage', () => {
       mount(synth('433', 2460975.5 + 90), '433');
       expect(screen.getByTestId('ambiguous-banner').getAttribute('role')).toBe('alert');
       cleanup();
+      let shown = 0;
       for (const order of [[0.5, 5], [5, 0.5]]) {
         lsqWithRms(order);
         mountWithCheck('433', 2460975.5 + 90, 30, '433');
         const d = screen.queryByTestId('lsq-disagreement');
-        if (d) expect(d.getAttribute('role')).toBe('alert');
+        if (d) {
+          expect(d.getAttribute('role')).toBe('alert');
+          shown++;
+        }
         cleanup();
       }
+      expect(shown).toBe(1); // exactly one run order produces the banner (see the test above), so the role check always runs
     });
 
     it('under 10x separation: says the 4th observation does not clearly separate them (alert)', () => {
@@ -214,6 +220,17 @@ describe('SolvePage', () => {
       expect(screen.queryByTestId('ambiguous-banner')).toBeNull();
       expect(screen.queryByText(/does not clearly separate/)).toBeNull();
       expect(num('pct-gauss-a')).toBeLessThan(1);
+    });
+
+    it('one-candidate banner is hidden once the user manually picks another root', () => {
+      const cat = body('433');
+      vi.mocked(compute.checkResidualRad).mockImplementation((el, c) =>
+        Math.abs(el.a - cat.a) / cat.a < 0.01 ? realCheck(el, c) : null,
+      );
+      mountWithCheck('433', 2460975.5 + 90, 30, '433');
+      expect(screen.getByTestId('one-candidate-banner')).toBeTruthy();
+      fireEvent.click(screen.getAllByRole('button', { name: 'use this root' })[0]!);
+      expect(screen.queryByTestId('one-candidate-banner')).toBeNull();
     });
 
     it('manual "use this root" overrides the auto-pick while a check obs exists', () => {
@@ -270,6 +287,29 @@ describe('angle errors, root mapping, epoch', () => {
   it('page epoch text names the source', () => {
     mount(synth('1', 2461410.5));
     expect(screen.getByText(/the Gauss middle body time/)).toBeTruthy();
+  });
+});
+
+describe('page epoch fallback texts', () => {
+  const realGauss = vi.mocked(astro.gauss).getMockImplementation()!;
+  const realLaplace = vi.mocked(astro.laplace).getMockImplementation()!;
+  afterEach(() => {
+    vi.mocked(astro.gauss).mockImplementation(realGauss);
+    vi.mocked(astro.laplace).mockImplementation(realLaplace);
+  });
+  const boom = () => {
+    throw new Error('forced failure');
+  };
+  it('names refined Laplace when Gauss fails', () => {
+    vi.mocked(astro.gauss).mockImplementation(boom);
+    mount(synth('1', 2461410.5));
+    expect(screen.getByText(/the refined Laplace middle body time, because Gauss failed/)).toBeTruthy();
+  });
+  it('names the middle observation when Gauss and refined Laplace both fail', () => {
+    vi.mocked(astro.gauss).mockImplementation(boom);
+    vi.mocked(astro.laplace).mockImplementation(boom);
+    mount(synth('1', 2461410.5));
+    expect(screen.getByText(/the middle observation time, because both Gauss and refined Laplace failed/)).toBeTruthy();
   });
 });
 

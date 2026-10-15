@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "fetch-data": "node scripts/fetch-data.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

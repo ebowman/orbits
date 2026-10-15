@@ -137,7 +137,7 @@ describe('gauss IOD, noiseless synthetic data', () => {
         for (const id of STEP_IDS) expect(ids).toContain(id);
         expect(ids.some((id) => /^iteration-\d+$/.test(id))).toBe(true);
         const it1 = res.trace.find((t) => t.id === 'iteration-1');
-        for (const key of ['rho', 'r1', 'r2', 'r3', 'f1', 'g1', 'f3', 'g3', 'y1', 'y3']) {
+        for (const key of ['rho', 'r1', 'r2', 'r3', 'f1', 'g1', 'f3', 'g3', 'y1', 'y3', 'jdTt2']) {
           expect(it1?.values).toHaveProperty(key);
         }
       });

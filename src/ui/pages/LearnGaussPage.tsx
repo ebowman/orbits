@@ -127,7 +127,7 @@ function overlaysFor(step: TraceStep, trace: TraceStep[], catalogEl: OrbitalElem
     // Older iterations fade toward the background; show the three before this one.
     for (let m = Math.max(1, n - 3); m <= n; m++) {
       const s = trace.find((t) => t.id === `iteration-${m}`);
-      const el = orbitFromState(isVec(s?.values.r2) ? s.values.r2 : null, isVec(s?.values.v2) ? s.values.v2 : null, epoch);
+      const el = orbitFromState(isVec(s?.values.r2) ? s.values.r2 : null, isVec(s?.values.v2) ? s.values.v2 : null, typeof s?.values.jdTt2 === 'number' ? s.values.jdTt2 : epoch);
       if (el) orbits.push({ elements: el, color: mix('#7fe0a0', '#222222', m === n ? 1 : 0.7 - 0.2 * (n - m - 1)), label: `iteration ${m}` });
     }
     out.orbits = orbits;

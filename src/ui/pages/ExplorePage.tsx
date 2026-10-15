@@ -86,7 +86,7 @@ function colorFor(v: number | null, lo: number, hi: number): string {
 
 const fmt = (v: number | null) => (v === null ? 'no data' : v < FLOOR ? `<${FLOOR.toExponential(0)}` : v.toExponential(1));
 
-function Heatmap({ title, grid, pick, lo, hi }: { title: string; grid: SweepCell[][]; pick: Pick; lo: number; hi: number }) {
+function Heatmap({ title, grid, pick, failPick, lo, hi }: { title: string; grid: SweepCell[][]; pick: Pick; failPick: (c: SweepCell) => number; lo: number; hi: number }) {
   const spacings = grid.map((r) => r[0]!.spacing);
   const noises = grid[0]!.map((c) => c.noise);
   const cw = 64;
@@ -112,13 +112,20 @@ function Heatmap({ title, grid, pick, lo, hi }: { title: string; grid: SweepCell
         {grid.map((row, i) =>
           row.map((c, j) => {
             const v = pick(c);
+            const fr = failPick(c);
+            const failPct = Math.round(fr * 100);
             return (
-              <g key={`${i}-${j}`} data-testid="heat-cell" data-nodata={v === null ? 'true' : 'false'}>
-                <title>{`spacing ${c.spacing} d, noise ${c.noise}": median rel. a error ${fmt(v)}`}</title>
+              <g key={`${i}-${j}`} data-testid="heat-cell" data-nodata={v === null ? 'true' : 'false'} data-failrate={fr}>
+                <title>{`spacing ${c.spacing} d, noise ${c.noise}": median rel. a error ${fmt(v)}; failed trials ${failPct}%`}</title>
                 <rect x={left + cw * j} y={top + ch * i} width={cw - 1} height={ch - 1} fill={colorFor(v, lo, hi)} />
                 <text x={left + cw * j + cw / 2} y={top + ch * i + ch / 2 + 4} fontSize="10" textAnchor="middle" fill="#fff" stroke="#000" strokeWidth="0.3">
                   {v === null ? 'no data' : fmt(v)}
                 </text>
+                {fr > 0 && (
+                  <text data-testid="heat-fail" x={left + cw * j + cw / 2} y={top + ch * i + ch - 5} fontSize="9" textAnchor="middle" fill="#fff" stroke="#000" strokeWidth="0.3">
+                    {`${failPct === 0 ? '<1' : failPct}% fail`}
+                  </text>
+                )}
               </g>
             );
           }),
@@ -332,8 +339,8 @@ export default function ExplorePage() {
       {grid && (
         <div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-            <Heatmap title="Gauss (iterated): median relative error in a" grid={grid} pick={(c) => c.gaussAErrMedian} lo={domain.lo} hi={domain.hi} />
-            <Heatmap title="Laplace (classical): median relative error in a" grid={grid} pick={(c) => c.laplaceAErrMedian} lo={domain.lo} hi={domain.hi} />
+            <Heatmap title="Gauss (iterated): median relative error in a" grid={grid} pick={(c) => c.gaussAErrMedian} failPick={(c) => c.gaussFailRate} lo={domain.lo} hi={domain.hi} />
+            <Heatmap title="Laplace (classical): median relative error in a" grid={grid} pick={(c) => c.laplaceAErrMedian} failPick={(c) => c.laplaceFailRate} lo={domain.lo} hi={domain.hi} />
           </div>
           <Legend lo={domain.lo} hi={domain.hi} />
           <h2>Error versus spacing</h2>

@@ -51,8 +51,11 @@ export function SkyInset({ L, tau1, tau3, Lp, Lpp }: { L: [Vec3, Vec3, Vec3]; ta
   const dt = Math.abs(tau3 - tau1) / 4;
   const a1 = comp(scale(Lp, dt));
   const a2 = comp(scale(Lpp, (dt * dt) / 2));
-  const xs = [...curve.map((p) => p[0]), ...pts.map((p) => p[0]), 0, a1[0], a2[0]];
-  const ys = [...curve.map((p) => p[1]), ...pts.map((p) => p[1]), 0, a1[1], a2[1]];
+  // Zero-length arrows (interpolation / line-of-sight steps) are not drawn and do not affect the extent.
+  const show1 = norm(Lp) > 0;
+  const show2 = norm(Lpp) > 0;
+  const xs = [...curve.map((p) => p[0]), ...pts.map((p) => p[0]), 0, ...(show1 ? [a1[0]] : []), ...(show2 ? [a2[0]] : [])];
+  const ys = [...curve.map((p) => p[1]), ...pts.map((p) => p[1]), 0, ...(show1 ? [a1[1]] : []), ...(show2 ? [a2[1]] : [])];
   const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-6) * 1.15;
   const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
   const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
@@ -85,14 +88,14 @@ export function SkyInset({ L, tau1, tau3, Lp, Lpp }: { L: [Vec3, Vec3, Vec3]; ta
           </text>
         </g>
       ))}
-      {arrow(a1, '#2e9e4f', 'arrow-Lp', "L'")}
-      {arrow(a2, '#e05050', 'arrow-Lpp', "L''")}
+      {show1 && arrow(a1, '#2e9e4f', 'arrow-Lp', "L'")}
+      {show2 && arrow(a2, '#e05050', 'arrow-Lpp', "L''")}
       <line x1={pad} x2={pad + barDeg * k} y1={H - 12} y2={H - 12} stroke="currentColor" />
       <text x={pad + barDeg * k + 6} y={H - 8} fontSize={10} fill="currentColor" data-testid="sky-scale">
         {`${barDeg} deg on sky`}
       </text>
       <text x={W - 6} y={14} fontSize={10} textAnchor="end" fill="currentColor">
-        {`arrows: L'x${dt.toFixed(1)} d and L''x(${dt.toFixed(1)} d)^2/2; centre RA ${((((c2.ra * DEG) % 360) + 360) % 360).toFixed(1)}, Dec ${(c2.dec * DEG).toFixed(1)} deg`}
+        {`${show1 || show2 ? `arrows: L'x${dt.toFixed(1)} d and L''x(${dt.toFixed(1)} d)^2/2; ` : ''}centre RA ${((((c2.ra * DEG) % 360) + 360) % 360).toFixed(1)}, Dec ${(c2.dec * DEG).toFixed(1)} deg`}
       </text>
     </svg>
   );
@@ -220,7 +223,7 @@ function overlaysFor(step: TraceStep, _index: number, trace: TraceStep[], catalo
   } else if (id.startsWith('iteration-')) {
     const r = isVec(step.values.r2) ? step.values.r2 : null;
     const v = isVec(step.values.v2) ? step.values.v2 : null;
-    const it = orbitFromState(r, v, jdTt2);
+    const it = orbitFromState(r, v, typeof step.values.jdTt2 === 'number' ? step.values.jdTt2 : jdTt2);
     out.orbits = [...classicalLine, ...(it ? [{ elements: it, color: REFINED, label: id }] : [])];
   } else if (id === 'final-state') {
     const r = isVec(step.values.r2) ? step.values.r2 : null;

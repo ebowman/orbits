@@ -296,6 +296,7 @@ export function laplace(obs: IODInput, opts: LaplaceOptions = {}): IODResult {
               c3: s.c3,
               lightTimeDays: lt,
               deltaRho: dRho,
+              jdTt2: jdTt[1] - (lightTime ? s.rho[1] / C_AU_PER_DAY : 0),
             },
           });
         }

@@ -19,7 +19,8 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      // Started after the build above has finished writing dist/ (the server polls until dist/index.html exists).
+      // Playwright starts webServer entries in order and waits for each URL before starting the next, so this runs
+      // only after the build above has finished; serve-subpath.mjs exits non-zero if dist/ is missing rather than waiting.
       command: 'node e2e/serve-subpath.mjs 4180 /sub/orbits/',
       url: 'http://localhost:4180/sub/orbits/',
       reuseExistingServer: false,

@@ -28,6 +28,19 @@ describe('ExplorePage', () => {
     expect(screen.getByText('What to look for')).toBeTruthy();
   }, 30000);
 
+  it('shows per-cell fail rate when trials fail', async () => {
+    render(<ExplorePage />);
+    fireEvent.change(screen.getByLabelText('Spacings'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Noise'), { target: { value: '0, 200000' } });
+    fireEvent.change(screen.getByLabelText('Trials'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run sweep' }));
+    await waitFor(() => expect(screen.getAllByTestId('heatmap')).toHaveLength(2), { timeout: 20000 });
+    const cells = screen.getAllByTestId('heat-cell');
+    expect(cells[0]!.getAttribute('data-failrate')).toBe('0');
+    expect(screen.queryAllByTestId('heat-fail').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('heat-fail')[0]!.textContent).toMatch(/% fail/);
+  }, 30000);
+
   it('rejects out-of-range trials', () => {
     render(<ExplorePage />);
     fireEvent.change(screen.getByLabelText('Trials'), { target: { value: '51' } });

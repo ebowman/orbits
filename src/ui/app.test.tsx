@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App, { Layout, Nav } from './App';
-import { exportSet, importSet, useStore } from './store';
+import { exportSet, importSet, safeStorage, useStore } from './store';
 
 // Node 25 ships a broken global localStorage that shadows jsdom's; install a plain in-memory one.
 vi.hoisted(() => {
@@ -191,6 +191,24 @@ describe('safe storage', () => {
       expect(warn).toHaveBeenCalledTimes(1);
     } finally {
       Object.defineProperty(globalThis, 'localStorage', { value: real, configurable: true });
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('safeStorage getItem failure', () => {
+  it('falls back to the in-memory copy when localStorage.getItem throws', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    safeStorage.setItem('k-getfail', 'v1');
+    const real = globalThis.localStorage;
+    const bad = { getItem: () => { throw new Error('blocked'); }, setItem: () => {}, removeItem: () => {} };
+    Object.defineProperty(globalThis, 'localStorage', { value: bad, configurable: true });
+    try {
+      expect(safeStorage.getItem('k-getfail')).toBe('v1');
+      expect(safeStorage.getItem('k-missing')).toBeNull();
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', { value: real, configurable: true });
+      safeStorage.removeItem('k-getfail');
       warn.mockRestore();
     }
   });

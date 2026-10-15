@@ -250,6 +250,8 @@ export default function SolvePage() {
           );
         }
         if (finiteCount === 1) {
+          // The auto-pick claim is false once the user has manually chosen a root.
+          if (pickedR2 !== null) return null;
           return (
             <div role="status" className="info-banner" data-testid="one-candidate-banner">
               Only one candidate could be checked against the 4th observation; it was selected.
@@ -299,7 +301,7 @@ export default function SolvePage() {
                 <td key={c.id} data-testid={`cell-${c.id}-${k}`}>
                   {c.values ? (
                     <>
-                      {fmt(c.values[k], k)}
+                      <span data-testid={`val-${c.id}-${k}`}>{fmt(c.values[k], k)}</span>
                       {catCol && <ErrCells id={c.id} k={k} value={c.values[k]} cat={catCol[k]} />}
                     </>
                   ) : k === 'a' ? (
@@ -311,7 +313,7 @@ export default function SolvePage() {
                   )}
                 </td>
               ))}
-              {catCol && <td>{fmt(catCol[k], k)}</td>}
+              {catCol && <td data-testid={`cat-${k}`}>{fmt(catCol[k], k)}</td>}
             </tr>
           ))}
         </tbody>

@@ -14,7 +14,7 @@ import {
   type Observation,
   type Site,
 } from '@astro';
-import { useStore, type NamedSite, type RowDraft } from '../store';
+import { useStore, STORED_PREFIX, storedSiteKey, type NamedSite, type RowDraft } from '../store';
 
 const pad = (n: number, w = 2) => String(n).padStart(w, '0');
 const ARCSEC = Math.PI / (180 * 3600);
@@ -54,12 +54,8 @@ const copySite = (s: NamedSite | undefined): Site | null =>
 
 type Row = RowDraft;
 const GEO = 'geocenter';
-const STORED_PREFIX = 'stored:';
 const EMPTY_ROW: RowDraft = { utc: '', ra: '', dec: '', siteKey: GEO };
 
-function storedKey(site: Site): string {
-  return `${STORED_PREFIX}${site.latDeg},${site.lonEastDeg},${site.elevM}`;
-}
 function storedFromKey(key: string): Site | null {
   if (!key.startsWith(STORED_PREFIX)) return null;
   const parts = key.slice(STORED_PREFIX.length).split(',').map(Number);
@@ -74,7 +70,7 @@ function rowFromObs(o: Observation | undefined, sites: NamedSite[]): Row {
     utc: jdToUtcInput(o.jdUtc),
     ra: formatRA(o.raRad, 2),
     dec: formatDec(o.decRad, 1),
-    siteKey: o.site === null ? GEO : match ? match.id : storedKey(o.site),
+    siteKey: o.site === null ? GEO : match ? match.id : storedSiteKey(o.site),
   };
 }
 
@@ -185,7 +181,7 @@ function ObsRows({ setId }: { setId: string }) {
       <legend>{legend}</legend>
       <label>
         Date/time (UTC)
-        <input type="datetime-local" step="1" value={r.utc} onChange={(e) => on({ utc: e.target.value })} />
+        <input type="datetime-local" step="0.001" value={r.utc} onChange={(e) => on({ utc: e.target.value })} />
       </label>
       {p.dt.ok === true && <span> JD {p.dt.value}</span>}
       {p.dt.ok === false && <span role="alert" className="error"> {p.dt.error}</span>}
@@ -490,7 +486,7 @@ function SyntheticPanel() {
       </label>
       <label>
         Start (UTC)
-        <input type="datetime-local" step="1" value={start} onChange={(e) => setStart(e.target.value)} />
+        <input type="datetime-local" step="0.001" value={start} onChange={(e) => setStart(e.target.value)} />
       </label>
       <label>
         Spacing (days)

@@ -27,6 +27,11 @@ async function solveSyntheticCeres(page: Page, base: string) {
   const text = (await cell.textContent()) ?? '';
   const pct = parseFloat(text.replace(/[^0-9eE+.-]/g, ''));
   expect(pct).toBeLessThan(1); // Gauss a within 1% of the catalog value
+  // Compare the displayed values directly rather than trusting only the % cell.
+  const gaussA = parseFloat((await page.getByTestId('val-gauss-a').textContent()) ?? '');
+  const catA = parseFloat((await page.getByTestId('cat-a').textContent()) ?? '');
+  expect(Number.isFinite(gaussA) && Number.isFinite(catA) && catA > 0).toBe(true);
+  expect(Math.abs(gaussA - catA) / catA).toBeLessThan(0.01);
   await expect(page.getByRole('columnheader', { name: /Least squares \(3 obs\)/ }).first()).toBeVisible();
   const rms = parseFloat((await page.getByTestId('lsq-rms').textContent()) ?? '');
   expect(rms).toBeLessThan(1); // LSQ RMS (arcsec) on a noise-free synthetic set
@@ -41,9 +46,9 @@ async function visitAll(page: Page, base: string) {
   }
 }
 
-// Headless chromium may have no WebGL; the app's own guard renders a fallback. Allow only the browser's
-// own GPU/WebGL context-creation noise, nothing else.
-const ALLOWED = [/WebGL|GPU stall|GL Driver Message|swiftshader/i];
+// Headless chromium may have no WebGL; the app's own guard renders a fallback. Allow only console.error
+// messages about WebGL context creation, nothing else (page errors, failed requests and HTTP errors are never allowed).
+const ALLOWED = [/^console\.error: .*(Error creating WebGL context|WebGL context could not be created|WebGL is not supported)/i];
 const unexpected = (errs: string[]) => errs.filter((e) => !ALLOWED.some((re) => re.test(e)));
 
 for (const [name, base] of [

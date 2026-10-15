@@ -12,9 +12,13 @@ const TYPES = {
   '.ttf': 'font/ttf', '.png': 'image/png', '.ico': 'image/x-icon',
 };
 
-// dist/ is produced by the other webServer's build; wait for it.
-while (!existsSync(join(dist, 'index.html'))) await new Promise((r) => setTimeout(r, 500));
-await new Promise((r) => setTimeout(r, 2000)); // let the build finish writing
+// dist/ must be the build produced by the first webServer in playwright.config.ts. Playwright starts webServer entries
+// in order and waits for each URL to respond before starting the next, so by the time this runs `npm run build` has
+// finished and dist/ is fresh. Do not poll/wait here: that could mask (or serve) a stale dist/. Fail loudly instead.
+if (!existsSync(join(dist, 'index.html'))) {
+  console.error(`${dist}index.html not found: run the build first (playwright.config.ts orders this server after it).`);
+  process.exit(1);
+}
 
 createServer((req, res) => {
   const path = decodeURIComponent((req.url ?? '/').split('?')[0]);

@@ -60,4 +60,22 @@ describe('sensitivity', () => {
     sweep({ ...base(), trials: 1 }, { onProgress: (d, t) => calls.push(d * 10 + t) });
     expect(calls).toEqual([12, 22]);
   });
+
+  it('seeds each cell from its (spacing, noise) values, not grid position', () => {
+    const p = base();
+    const a = sweepCell({ ...p, spacings: [10], noiseArcsec: [0, 2] }, 0, 1);
+    const b = sweepCell({ ...p, spacings: [5, 10, 20], noiseArcsec: [1, 3, 2] }, 1, 2);
+    expect(b).toEqual(a);
+  });
+
+  it('runs Gauss once per trial (first approximation reuses the same run)', () => {
+    let calls = 0;
+    const counting = (obs: Parameters<typeof defaultSolvers.gauss>[0]) => {
+      calls++;
+      return defaultSolvers.gauss(obs);
+    };
+    const cell = sweepCell({ ...base(), trials: 3 }, 0, 0, { ...defaultSolvers, gauss: counting });
+    expect(calls).toBe(3);
+    expect(cell.gaussFirstFailRate).toBeLessThan(1);
+  });
 });
