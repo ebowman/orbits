@@ -4,6 +4,8 @@ A single-page web app for initial orbit determination (IOD): give it three obser
 asteroid and it computes the orbital elements with Gauss's method and Laplace's method, compares them with the
 catalog, and walks through how each method works. Everything runs in the browser; the app never fetches data at runtime.
 
+**Live demo:** https://ebowman.github.io/orbits/
+
 ## Routes
 
 The app uses a hash router, so it works on any static host.
@@ -78,3 +80,9 @@ newer elements.
 - E. M. Standish, approximate positions of the planets (JPL)
 - J. Meeus, Astronomical Algorithms
 - H. Curtis, Orbital Mechanics for Engineering Students; P. R. Escobal, Methods of Orbit Determination
+
+## Deploying
+
+GitHub Pages builds from `main` via the Actions workflow in `.github/workflows/pages.yml` (test, build, deploy `dist/`).
+In the repo settings, Pages > Source must be set to "GitHub Actions". `dist/` is a fully static site (relative asset
+paths, hash router), so it can be hosted anywhere, including under a sub-path.
