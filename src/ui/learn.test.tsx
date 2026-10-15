@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
+import { gauss, laplace, loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
 import LearnGaussPage from './pages/LearnGaussPage';
 import LearnLaplacePage, { SkyInset } from './pages/LearnLaplacePage';
 import MathText, { splitMath } from './learn/Math';
 import { useStore } from './store';
+import { ceresExample } from './learn/source';
 
 vi.hoisted(() => {
   const m = new Map<string, string>();
@@ -23,9 +24,10 @@ vi.hoisted(() => {
 });
 
 vi.mock('./scene/OrbitScene', () => ({
-  default: (p: { orbits?: unknown[]; points?: unknown[]; rays?: unknown[] }) => (
+  default: (p: { orbits?: { label?: string; elements: { epochJd: number } }[]; points?: unknown[]; rays?: unknown[] }) => (
     <div
       data-testid="scene"
+      data-epochs={JSON.stringify(Object.fromEntries((p.orbits ?? []).map((o) => [o.label, o.elements.epochJd])))}
       data-orbits={p.orbits?.length ?? 0}
       data-points={p.points?.length ?? 0}
       data-rays={p.rays?.length ?? 0}
@@ -48,7 +50,32 @@ const title = () => screen.getByTestId('step-title').textContent;
 const counter = () => screen.getByTestId('step-counter').textContent!;
 const total = () => Number(/of (\d+)/.exec(counter())![1]);
 
+/** Steps the page through its iteration-N steps; returns, per step, the scene's {label: epochJd} map and the trace step. */
+function iterationEpochs(trace: { id: string; values: Record<string, unknown> }[]) {
+  const out: { id: string; jd: number; epochs: Record<string, number> }[] = [];
+  trace.forEach((st, k) => {
+    if (!st.id.startsWith('iteration-')) return;
+    fireEvent.change(screen.getByLabelText('Step'), { target: { value: String(k) } });
+    out.push({ id: st.id, jd: st.values.jdTt2 as number, epochs: JSON.parse(screen.getByTestId('scene').getAttribute('data-epochs')!) });
+  });
+  return out;
+}
+
 describe('LearnGaussPage', () => {
+  it('passes each iteration its own jdTt2 as the scene epoch (not a fixed epoch)', async () => {
+    const trace = gauss(ceresExample()).trace;
+    render(<LearnGaussPage />);
+    await screen.findByTestId('scene');
+    const its = iterationEpochs(trace);
+    expect(its.length).toBeGreaterThanOrEqual(2);
+    // Light-time correction makes the epoch differ between iterations (iteration 1 uses the uncorrected epoch).
+    expect(new Set(its.map((x) => x.jd)).size).toBeGreaterThanOrEqual(2);
+    for (const it of its) expect(it.epochs[`iteration ${it.id.slice('iteration-'.length)}`]).toBe(it.jd);
+    // Older iterations drawn alongside also keep their own epoch.
+    for (const it of its) for (const [label, jd] of Object.entries(it.epochs)) expect(jd).toBe(its.find((x) => `iteration ${x.id.slice(10)}` === label)!.jd);
+    expect(new Set(its.flatMap((x) => Object.values(x.epochs))).size).toBeGreaterThanOrEqual(2);
+  });
+
   it('uses the built-in Ceres example when the store is empty and Next/Prev change the title', async () => {
     render(<LearnGaussPage />);
     expect(screen.getByTestId('data-source').textContent).toMatch(/built-in synthetic Ceres/);
@@ -141,6 +168,16 @@ describe('MathText', () => {
 });
 
 describe('LearnLaplacePage', () => {
+  it('passes each iteration its own jdTt2 as the scene epoch (not a fixed epoch)', async () => {
+    const trace = laplace(ceresExample(), { iterate: true }).trace;
+    render(<LearnLaplacePage />);
+    await screen.findByTestId('scene');
+    const its = iterationEpochs(trace);
+    expect(its.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(its.map((x) => x.jd)).size).toBeGreaterThanOrEqual(2);
+    for (const it of its) expect(it.epochs[it.id]).toBe(it.jd);
+  });
+
   const goto = (name: string) => {
     const n = total();
     for (let k = 0; k < n; k++) {

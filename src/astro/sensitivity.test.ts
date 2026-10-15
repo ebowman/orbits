@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { gauss } from './iod/gauss';
 import { loadCatalog } from './catalog';
 import type { OrbitalElements } from './elements';
 import { bestElongationStart, defaultSolvers, median, sweep, sweepCell, type SweepParams } from './sensitivity';
+
+// Spy on the real gauss module so EVERY path (iterated result, first approximation, any bypass) is counted.
+vi.mock('./iod/gauss', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./iod/gauss')>();
+  return { ...actual, gauss: vi.fn(actual.gauss) };
+});
 
 const ceres = loadCatalog().find((c) => c.id === '1')!.body as OrbitalElements;
 const base = (): SweepParams => ({
@@ -68,14 +75,23 @@ describe('sensitivity', () => {
     expect(b).toEqual(a);
   });
 
-  it('runs Gauss once per trial (first approximation reuses the same run)', () => {
-    let calls = 0;
-    const counting = (obs: Parameters<typeof defaultSolvers.gauss>[0]) => {
-      calls++;
-      return defaultSolvers.gauss(obs);
-    };
-    const cell = sweepCell({ ...base(), trials: 3 }, 0, 0, { ...defaultSolvers, gauss: counting });
-    expect(calls).toBe(3);
-    expect(cell.gaussFirstFailRate).toBeLessThan(1);
+  describe('Gauss call count', () => {
+    beforeEach(() => {
+      vi.mocked(gauss).mockClear();
+    });
+
+    it('runs the real gauss exactly once per trial (first approximation reuses the same run)', () => {
+      for (const [trials, noise] of [[3, 0], [4, 1]] as const) {
+        vi.mocked(gauss).mockClear();
+        const cell = sweepCell({ ...base(), trials, noiseArcsec: [noise] }, 0, 0);
+        expect(vi.mocked(gauss)).toHaveBeenCalledTimes(trials);
+        expect(cell.gaussFirstFailRate).toBeLessThan(1);
+      }
+    });
+
+    it('counts gauss calls made through the default solvers across a whole sweep', () => {
+      sweep({ ...base(), trials: 2 }); // 1 spacing x 2 noise x 2 trials
+      expect(vi.mocked(gauss)).toHaveBeenCalledTimes(4);
+    });
   });
 });
