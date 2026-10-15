@@ -239,9 +239,74 @@ describe('gauss IOD, regressions', () => {
     });
   }
 
-  it('D0 threshold: warns on weak geometry', () => {
+  // Geocentric, RA = 0, 0.01, 0.02 rad, dec = 0, h, 0. With unit vectors (cos d cos a, cos d sin a, sin d),
+  // D0 = L1 . (L2 x L3) expands by hand to ~ -0.02 h (to first order in the small angles).
+  const mkD0 = (h: number): IODInput => {
+    const mk = (dt: number, ra: number, dec: number): Observation => ({ jdUtc: 2461000.5 + dt, raRad: ra, decRad: dec, site: null });
+    return [mk(0, 0, 0), mk(10, 0.01, h), mk(20, 0.02, 0)];
+  };
+  const handD0 = (h: number): number => {
+    const u = (ra: number, dec: number): number[] => [Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec)];
+    const a = u(0, 0);
+    const b = u(0.01, h);
+    const c = u(0.02, 0);
+    return (
+      a[0]! * (b[1]! * c[2]! - b[2]! * c[1]!) - a[1]! * (b[0]! * c[2]! - b[2]! * c[0]!) + a[2]! * (b[0]! * c[1]! - b[1]! * c[0]!)
+    );
+  };
+
+  it('D0 threshold: warns on weak geometry (1e-8 < |D0| < 1e-6)', () => {
+    const h = 5e-6;
+    const expected = -0.02 * h; // independent first-order hand value, -1e-7
+    expect(Math.abs(handD0(h) - expected) / Math.abs(expected)).toBeLessThan(1e-2);
+    // The default policy finds no valid root for this contrived geometry; rootIndex forces a result.
+    const res = gauss(mkD0(h), { rootIndex: 0 });
+    const warn = res.warnings.find((w) => w.startsWith('weak geometry: D0='));
+    expect(warn).toBeDefined();
+    const reported = Number(warn!.slice('weak geometry: D0='.length));
+    expect(Math.abs(reported - expected) / Math.abs(expected)).toBeLessThan(1e-2);
+  });
+
+  it('D0 threshold: no weak-geometry warning for well-conditioned geometry', () => {
     const el = elementsOf('1');
     const res = gauss(synth(el, bestStart(el), null));
-    expect(res.warnings.some((w) => w.startsWith('weak geometry'))).toBe(res.trace.length > 0 && Math.abs(res.trace.find((t) => t.id === 'd-scalars')?.values.D0 as number) < 1e-6);
+    expect(res.warnings.some((w) => w.startsWith('weak geometry'))).toBe(false);
+  });
+
+  it('D0 threshold: throws when |D0| < 1e-8', () => {
+    const h = 2.5e-7;
+    const expected = -0.02 * h; // -5e-9
+    expect(Math.abs(handD0(h) - expected) / Math.abs(expected)).toBeLessThan(1e-2);
+    expect(() => gauss(mkD0(h), { rootIndex: 0 })).toThrow(
+      'Observations are nearly coplanar with the Sun-observer geometry; choose different times',
+    );
+  });
+
+  it('explicit rootIndex for a rejected root returns a result with a rejection warning', () => {
+    // Ceres at its catalog epoch: root 0 (r2 ~ 1.0123 AU) is Earth-coincident, rho2 < 1e-4 AU.
+    const el = elementsOf('1');
+    const obs = synth(el, el.epochJd, null);
+    expect(() => gauss(obs)).not.toThrow(); // the default policy picks a valid root
+    const dflt = gauss(obs);
+    expect(dflt.warnings.some((w) => w.includes('would normally be rejected'))).toBe(false);
+    const res = gauss(obs, { rootIndex: 0 });
+    expect(res.chosenRoot).toBe(res.rootsConsidered[0]);
+    expect(res.chosenRoot).not.toBe(dflt.chosenRoot);
+    const w = res.warnings.find((x) => x.startsWith('The requested root '));
+    expect(w).toBeDefined();
+    expect(w).toMatch(/would normally be rejected: initial rho2 = .* is below 0\.0001 AU/);
+    expect(w).toContain(res.chosenRoot.toFixed(4));
+  });
+
+  it('stops at the numerical noise floor: converged=true plus warning', () => {
+    // tol = 0 can never be met by the relative test, so only the noise-floor stop can end the loop early.
+    const el = elementsOf('1');
+    const res = gauss(synth(el, el.epochJd, null), { tol: 0, rootIndex: 1 });
+    expect(res.converged).toBe(true);
+    expect(res.iterations).toBeLessThan(50);
+    const w = res.warnings.find((x) => x.startsWith('Iteration stopped at the numerical noise floor'));
+    expect(w).toBeDefined();
+    expect(w).toMatch(/change in rho [0-9.]+e-\d+ AU\) rather than reaching 0\./);
+    expect(res.warnings.some((x) => x.includes('did not converge'))).toBe(false);
   });
 });
