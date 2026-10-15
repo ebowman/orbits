@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { loadCatalog, predict, type IODInput, type OrbitalElements } from '@astro';
 import LearnGaussPage from './pages/LearnGaussPage';
+import LearnLaplacePage, { SkyInset } from './pages/LearnLaplacePage';
 import MathText, { splitMath } from './learn/Math';
 import { useStore } from './store';
 
@@ -136,5 +137,88 @@ describe('MathText', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('.katex')).not.toBeNull();
     expect(container.textContent).toContain('<img');
+  });
+});
+
+describe('LearnLaplacePage', () => {
+  const goto = (name: string) => {
+    const n = total();
+    for (let k = 0; k < n; k++) {
+      if (title() === name) return;
+      fireEvent.click(screen.getByText('Next'));
+    }
+    throw new Error(`step ${name} not found`);
+  };
+
+  it('uses the built-in example and Next/Prev change the step', async () => {
+    render(<LearnLaplacePage />);
+    expect(screen.getByTestId('data-source').textContent).toMatch(/built-in synthetic Ceres/);
+    await screen.findByTestId('scene');
+    const t0 = title();
+    fireEvent.click(screen.getByText('Next'));
+    expect(title()).not.toBe(t0);
+    fireEvent.click(screen.getByText('Prev'));
+    expect(title()).toBe(t0);
+    expect((screen.getByText('Prev') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows L-prime and L-double-prime arrows plus the curve on the derivatives step', () => {
+    render(<LearnLaplacePage />);
+    goto('Line-of-sight derivatives');
+    const svg = screen.getByTestId('sky-inset');
+    expect(svg.querySelector('[data-testid="arrow-Lp"] line')).not.toBeNull();
+    expect(svg.querySelector('[data-testid="arrow-Lpp"] line')).not.toBeNull();
+    expect(svg.querySelector('[data-testid="sky-curve"]')).not.toBeNull();
+    expect(svg.querySelectorAll('[data-testid="sky-point"]')).toHaveLength(3);
+    expect(screen.getByTestId('sky-scale').textContent).toMatch(/deg on sky/);
+  });
+
+  it('steps through every step without console errors and shows the classical vs refined table', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<LearnLaplacePage />);
+    await screen.findByTestId('scene');
+    const n = total();
+    const seen = new Set<string>();
+    let tables = 0;
+    for (let k = 0; k < n; k++) {
+      seen.add(title()!);
+      if (screen.queryByTestId('compare-table')) {
+        tables++;
+        for (const e of ['a', 'e', 'i', 'Omega', 'omega', 'M0']) expect(screen.getByTestId(`cmp-diff-${e}`).textContent).toMatch(/e[+-]\d+/);
+      }
+      if (k < n - 1) fireEvent.click(screen.getByText('Next'));
+    }
+    expect(seen.size).toBe(n);
+    expect(tables).toBeGreaterThanOrEqual(2); // classical-result and elements
+    expect(err).not.toHaveBeenCalled();
+  });
+
+  it('final overlay shows classical, refined and catalog orbits', async () => {
+    render(<LearnLaplacePage />);
+    await screen.findByTestId('scene');
+    fireEvent.change(screen.getByLabelText('Step'), { target: { value: String(total() - 1) } });
+    expect(screen.getByTestId('scene').getAttribute('data-orbits')).toBe('3');
+  });
+
+  it('intro is at most 200 words', () => {
+    render(<LearnLaplacePage />);
+    expect(screen.getByTestId('laplace-intro').textContent!.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('SkyInset', () => {
+  it('unwraps RA across 0/360 so the curve stays compact', () => {
+    const v = (raDeg: number): [number, number, number] => {
+      const a = (raDeg * Math.PI) / 180;
+      return [Math.cos(a), Math.sin(a), 0];
+    };
+    const { container } = render(
+      <SkyInset L={[v(359), v(0.5), v(2)]} tau1={-10} tau3={10} Lp={[0, 0.01, 0]} Lpp={[0, 0, 0.001]} />,
+    );
+    const d = container.querySelector('[data-testid="sky-curve"]')!.getAttribute('d')!;
+    const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map((m) => Number(m[1]));
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(400); // would be ~360 deg wide, off-canvas, without unwrapping
+    expect(Math.max(...xs)).toBeLessThanOrEqual(400);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0);
   });
 });

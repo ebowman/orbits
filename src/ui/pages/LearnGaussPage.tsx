@@ -1,22 +1,6 @@
-import { useMemo, useState } from 'react';
-import {
-  add,
-  dot,
-  gauss,
-  loadCatalog,
-  predict,
-  radecToUnit,
-  scale,
-  stateToElements,
-  unit,
-  type IODInput,
-  type IODResult,
-  type Observation,
-  type OrbitalElements,
-  type TraceStep,
-  type Vec3,
-} from '@astro';
-import { useStore } from '../store';
+import { useMemo } from 'react';
+import { add, gauss, scale, type IODResult, type OrbitalElements, type TraceStep } from '@astro';
+import { ceresExample, findBody, isVec, nums, num, orbitFromState, useIodSource, vec, type Source } from '../learn/source';
 import Walkthrough, { type StepOverlay } from '../learn/Walkthrough';
 import MathText from '../learn/Math';
 
@@ -25,70 +9,10 @@ const INTRO =
 
 const HELIO_COLORS = ['#ffd24a', '#ff9f4a', '#ff6f6f'];
 
-function findBody(id: string | undefined): { name: string; el: OrbitalElements } | null {
-  if (!id) return null;
-  const e = loadCatalog().find((c) => c.id === id);
-  if (!e || !('a' in e.body)) return null;
-  return { name: e.name, el: e.body as OrbitalElements };
-}
-
-/** Start date within +-400 d of the catalog epoch that maximises elongation (5-day scan). */
-function bestStart(el: OrbitalElements): number {
-  let best = el.epochJd;
-  let bestEl = -1;
-  for (let d = -400; d <= 400; d += 5) {
-    const p = predict(el, el.epochJd + d, null);
-    const e = Math.acos(dot(radecToUnit(p.raRad, p.decRad), unit(scale(p.rObserver, -1))));
-    if (e > bestEl) {
-      bestEl = e;
-      best = el.epochJd + d;
-    }
-  }
-  return best;
-}
-
-let cachedExample: IODInput | null = null;
-/** Noise-free Ceres observations 10 d apart, starting near maximum elongation (not at the epoch). */
-export function ceresExample(): IODInput {
-  if (cachedExample) return cachedExample;
-  const ceres = findBody('1');
-  if (!ceres) throw new Error('Catalog is missing Ceres');
-  const start = bestStart(ceres.el);
-  cachedExample = [0, 10, 20].map((d): Observation => {
-    const p = predict(ceres.el, start + d, null);
-    return { jdUtc: start + d, raRad: p.raRad, decRad: p.decRad, site: null, label: `Ceres day ${d}` };
-  }) as IODInput;
-  return cachedExample;
-}
-
-const isVec = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number');
-const vec = (trace: TraceStep[], id: string, key: string): Vec3 | null => {
-  const v = trace.find((s) => s.id === id)?.values[key];
-  return isVec(v) ? v : null;
-};
-const nums = (trace: TraceStep[], id: string, key: string): number[] | null => {
-  const v = trace.find((s) => s.id === id)?.values[key];
-  return Array.isArray(v) && v.every((x) => typeof x === 'number') ? (v as number[]) : null;
-};
-const num = (trace: TraceStep[], id: string, key: string): number | null => {
-  const v = trace.find((s) => s.id === id)?.values[key];
-  return typeof v === 'number' ? v : null;
-};
-
 function mix(hex: string, bg: string, t: number): string {
   const p = (h: string, o: number) => parseInt(h.slice(1 + o, 3 + o), 16);
   const c = [0, 2, 4].map((o) => Math.round(p(hex, o) * t + p(bg, o) * (1 - t)));
   return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function orbitFromState(r: Vec3 | null, v: Vec3 | null, jdTt: number | null): OrbitalElements | null {
-  if (!r || !v || jdTt === null) return null;
-  try {
-    const el = stateToElements(r, v, jdTt).elements;
-    return el.e < 1 && el.a > 0 && Number.isFinite(el.a) ? el : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Evaluate x^8 + a x^6 + b x^3 + c. */
@@ -219,15 +143,8 @@ function overlaysFor(step: TraceStep, index: number, trace: TraceStep[], catalog
   return out;
 }
 
-type Source = 'store' | 'example';
-
 export default function LearnGaussPage() {
-  const sets = useStore((s) => s.observationSets);
-  const activeId = useStore((s) => s.activeSetId);
-  const active = sets.find((s) => s.id === activeId);
-  const storeObs = active && active.observations.length === 3 ? (active.observations as IODInput) : null;
-  const [choice, setChoice] = useState<Source>('store');
-  const source: Source = storeObs && choice === 'store' ? 'store' : 'example';
+  const { active, storeObs, source, setChoice } = useIodSource();
 
   const { result, error, catalogEl, label } = useMemo(() => {
     const obs = source === 'store' && storeObs ? storeObs : ceresExample();
