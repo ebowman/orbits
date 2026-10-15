@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { useStore } from './store';
 import HomePage from './pages/HomePage';
 import PlanPage from './pages/PlanPage';
 import ObservePage from './pages/ObservePage';
 import SolvePage from './pages/SolvePage';
-import LearnGaussPage from './pages/LearnGaussPage';
-import LearnLaplacePage from './pages/LearnLaplacePage';
-import ExplorePage from './pages/ExplorePage';
+const LearnGaussPage = lazy(() => import('./pages/LearnGaussPage'));
+const LearnLaplacePage = lazy(() => import('./pages/LearnLaplacePage'));
+const ExplorePage = lazy(() => import('./pages/ExplorePage'));
 
 const LINKS = [
   { to: '/', label: 'Home' },
@@ -52,6 +52,7 @@ export function Nav() {
 
 export function AppRoutes() {
   return (
+    <Suspense fallback={<p>Loading...</p>}>
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/plan" element={<PlanPage />} />
@@ -61,6 +62,7 @@ export function AppRoutes() {
       <Route path="/learn/laplace" element={<LearnLaplacePage />} />
       <Route path="/explore" element={<ExplorePage />} />
     </Routes>
+    </Suspense>
   );
 }
 

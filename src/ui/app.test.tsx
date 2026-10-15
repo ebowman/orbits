@@ -39,13 +39,13 @@ const routes: [string, string][] = [
 ];
 
 describe('routing', () => {
-  it.each(routes)('MemoryRouter %s renders heading', (path, heading) => {
+  it.each(routes)('MemoryRouter %s renders heading', async (path, heading) => {
     render(
       <MemoryRouter initialEntries={[path]}>
         <Layout />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('heading', { level: 1, name: heading })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeTruthy();
   });
 
   it('HashRouter App follows window.location.hash', () => {

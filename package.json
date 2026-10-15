@@ -11,10 +11,12 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "fetch-data": "node scripts/fetch-data.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/katex": "^0.16.8",

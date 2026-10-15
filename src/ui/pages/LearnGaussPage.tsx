@@ -54,7 +54,7 @@ export function RootsPlot({ a, b, c, roots, chosen }: { a: number; b: number; c:
   );
 }
 
-function overlaysFor(step: TraceStep, index: number, trace: TraceStep[], catalogEl: OrbitalElements | null): StepOverlay {
+function overlaysFor(step: TraceStep, trace: TraceStep[], catalogEl: OrbitalElements | null): StepOverlay {
   const R = ['R1', 'R2', 'R3'].map((k) => vec(trace, 'observer-positions', k));
   const L = ['L1', 'L2', 'L3'].map((k) => vec(trace, 'los-vectors', k));
   const rho = nums(trace, 'slant-ranges', 'rho');
@@ -70,10 +70,12 @@ function overlaysFor(step: TraceStep, index: number, trace: TraceStep[], catalog
   const out: StepOverlay = {};
   const id = step.id;
   const final = trace.find((s) => s.id === 'final-state');
+  // Prefer the light-time-corrected epoch of the final state over the uncorrected observation epoch.
+  const epoch = typeof final?.values.jdTt2 === 'number' ? final.values.jdTt2 : jdTt2;
   const finalEl = orbitFromState(
     isVec(final?.values.r2) ? final.values.r2 : null,
     isVec(final?.values.v2) ? final.values.v2 : null,
-    typeof final?.values.jdTt2 === 'number' ? final.values.jdTt2 : jdTt2,
+    epoch,
   );
 
   if (id === 'los-vectors' || id === 'time-intervals' || id === 'd-scalars' || id === 'polynomial') {
@@ -125,7 +127,7 @@ function overlaysFor(step: TraceStep, index: number, trace: TraceStep[], catalog
     // Older iterations fade toward the background; show the three before this one.
     for (let m = Math.max(1, n - 3); m <= n; m++) {
       const s = trace.find((t) => t.id === `iteration-${m}`);
-      const el = orbitFromState(isVec(s?.values.r2) ? s.values.r2 : null, isVec(s?.values.v2) ? s.values.v2 : null, jdTt2);
+      const el = orbitFromState(isVec(s?.values.r2) ? s.values.r2 : null, isVec(s?.values.v2) ? s.values.v2 : null, epoch);
       if (el) orbits.push({ elements: el, color: mix('#7fe0a0', '#222222', m === n ? 1 : 0.7 - 0.2 * (n - m - 1)), label: `iteration ${m}` });
     }
     out.orbits = orbits;
@@ -139,7 +141,6 @@ function overlaysFor(step: TraceStep, index: number, trace: TraceStep[], catalog
     out.orbits = orbits;
     if (jdTt2 !== null) out.jd = jdTt2;
   }
-  void index;
   return out;
 }
 
@@ -183,7 +184,7 @@ export default function LearnGaussPage() {
         <Walkthrough
           key={source + (active?.id ?? '')}
           trace={result.trace}
-          overlaysFor={(step, i, trace) => overlaysFor(step, i, trace, catalogEl)}
+          overlaysFor={(step, _i, trace) => overlaysFor(step, trace, catalogEl)}
         />
       ) : null}
     </section>
