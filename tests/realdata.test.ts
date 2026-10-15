@@ -1,13 +1,13 @@
-// ERROR BUDGET: e/i limits are looser than the noiseless synthetic tests because real data carries
-// systematic line-of-sight errors that act like correlated observation errors:
-//  - Earth position comes from the Standish approximate ephemeris, up to ~9e-5 AU off (planets.test.ts vs Horizons);
-//  - predictor-vs-Horizons residuals are 6-14 arcsec (ephemeris.test.ts), larger than the 1 arcsec noise tests,
-//    which already showed e errors up to ~1e-2 for Ceres.
-// CONTROL (last describe): feeding Horizons Earth vectors instead of Standish for Ceres 10 d (Gauss/refined) drops
-// errors a 2.8e-3 -> 4.4e-5 (rel), e 0.0150 -> 0.00019, i 0.137 -> 0.0014 deg; i.e. Standish Earth is the dominant term.
-// Measured worst cases (Gauss/refined): Ceres 10 d e=0.0150, Eros i=0.147 deg. Hence e<0.03, i<0.35 deg
-// (classical: e<0.05, i<0.5 deg); a stays <1% (classical <10%). The diagnostic test below shows the solver
-// itself recovers Horizons elements to <1e-6 when fed our own predict() output.
+// ERROR BUDGET (after orbits-q9e.26: Standish EMB corrected to the geocentre with a truncated Meeus Moon):
+//  - Earth position = Standish EMB minus moonGeo/(1+81.3); residual vs Horizons Earth is <= 8.3e-6 AU
+//    (was 4.1e-5 AU as bare EMB; src/astro/moon.test.ts). The lunar wobble used to corrupt Gauss/Laplace curvature:
+//    Ceres 10 d Gauss/refined was e 0.0150, i 0.137 deg before the fix, now e 1.4e-4, i 3.2e-4 deg.
+//  - predictor-vs-Horizons residuals are 6-14 arcsec (ephemeris.test.ts), larger than the 1 arcsec noise tests.
+// Measured worst cases after the fix (Gauss = Laplace refined): a rel 1.07e-4 (Eros 5 d), e 1.41e-4 (Ceres 10 d),
+// i 2.24e-3 deg (Eros 5 d). Tolerances are ~2x worst with minimums: refined a<3e-4, e<3e-4, i<5e-3 deg.
+// Classical Laplace (no refinement) is dominated by its own truncation error, not Earth: worst a 1.05e-2 (Ceres 10 d),
+// e 5.3e-3 (Eros 10 d), i 0.217 deg (Eros 10 d) -> a<2.5e-2, e<1.2e-2, i<0.45 deg.
+// The diagnostic test below shows the solver itself recovers Horizons elements to <1e-6 when fed our own predict() output.
 // Real-data validation: Gauss and Laplace IOD on JPL Horizons astrometry (opposition windows).
 // Truth = Horizons osculating elements at the triplet's middle epoch (fixtures *-opposition-elements.json),
 // propagated two-body to the solver's light-time-corrected body time jdTt2 (a few hours at most).
@@ -69,8 +69,8 @@ const errs = (got: OrbitalElements, t: OrbitalElements): Err => ({
   iDeg: Math.abs(got.i - t.i) * RAD2DEG,
 });
 type Tol = { a: number; e: number; i: number };
-const TOL_REFINED: Tol = { a: 0.01, e: 0.03, i: 0.35 };
-const TOL_CLASSICAL: Tol = { a: 0.1, e: 0.05, i: 0.5 };
+const TOL_REFINED: Tol = { a: 3e-4, e: 3e-4, i: 5e-3 };
+const TOL_CLASSICAL: Tol = { a: 2.5e-2, e: 1.2e-2, i: 0.45 };
 const within = (x: Err, t: Tol): boolean => x.aRel < t.a && x.e < t.e && x.iDeg < t.i;
 
 const summary: Record<string, string | number>[] = [];
@@ -229,10 +229,14 @@ describe('control: Horizons Earth vs Standish Earth (error-budget attribution)',
     console.log('CONTROL ceres 10d gauss  Horizons Earth:', xh);
     expect(std.converged).toBe(true);
     expect(hor.converged).toBe(true);
-    // Measured: Horizons Earth cuts e error ~80x (0.0150 -> 0.00019) and i ~100x, so Standish Earth dominates the budget.
-    expect(xh.e).toBeLessThan(xs.e);
-    expect(xh.iDeg).toBeLessThan(xs.iDeg);
-    expect(xh.aRel).toBeLessThan(xs.aRel);
-    expect(xh.e).toBeLessThan(0.002);
+    // After q9e.26 both Earth sources are good: Standish (geocentre-corrected) e 1.4e-4 / i 3.2e-4 deg,
+    // Horizons e 1.9e-4 / i 1.4e-3 deg (before the fix Standish was e 0.0150 / i 0.137 deg, ~80-100x worse).
+    // Residual errors are now dominated by the predictor-vs-Horizons astrometry, not Earth, so no ordering is asserted.
+    expect(within(xs, TOL_REFINED)).toBe(true);
+    expect(xs.e).toBeLessThan(5e-4);
+    expect(xs.iDeg).toBeLessThan(2e-3);
+    expect(xh.e).toBeLessThan(5e-4);
+    expect(xh.iDeg).toBeLessThan(5e-3);
+    expect(xh.aRel).toBeLessThan(2e-4);
   });
 });

@@ -14,6 +14,7 @@ describe('horizons fixtures', () => {
     }
     expect(files).toContain('earth.json');
     expect(files).toContain('earth-ceres-opposition.json');
+    expect(files).toContain('moon-geocentric.json');
     for (const b of ['ceres', 'vesta', 'eros']) {
       expect(files).toContain(`${b}-opposition-geocentric.json`);
       expect(files).toContain(`${b}-opposition-568.json`);
@@ -37,7 +38,7 @@ describe('horizons fixtures', () => {
     });
   }
 
-  for (const f of files.filter((x) => !['earth.json', 'earth-ceres-opposition.json'].includes(x) && !x.endsWith('-elements.json'))) {
+  for (const f of files.filter((x) => !['earth.json', 'earth-ceres-opposition.json', 'moon-geocentric.json'].includes(x) && !x.endsWith('-elements.json'))) {
     it(`${f} observer rows are valid`, () => {
       const j = load(f);
       expect(j.timeScale).toBe('UTC');
@@ -86,5 +87,18 @@ describe('horizons fixtures', () => {
       expect(r.jdUtc).toBe(2461410.5 + k);
       expect(Math.abs(r.jdTdb! - r.jdUtc! - 69.184 / 86400)).toBeLessThan(1e-9);
     });
+  });
+
+  it('moon-geocentric.json has finite geocentric Moon vectors at ~0.00257 AU', () => {
+    const j = load('moon-geocentric.json');
+    expect(j.rows.length).toBeGreaterThanOrEqual(6);
+    for (const r of j.rows) {
+      for (const k of ['jdTdb', 'x', 'y', 'z', 'vx', 'vy', 'vz']) {
+        expect(Number.isFinite(r[k]), k).toBe(true);
+      }
+      const d = Math.hypot(r.x, r.y, r.z);
+      expect(d).toBeGreaterThan(0.0023);
+      expect(d).toBeLessThan(0.0029);
+    }
   });
 });

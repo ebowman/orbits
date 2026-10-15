@@ -231,7 +231,41 @@ async function earthWindowFixture(startUtc) {
   return { body: 'Earth', center: '500@10', frame: 'ICRF equatorial J2000', units: 'AU, AU/day', timeScale: 'TDB', purpose: 'Daily Earth vectors over the Ceres opposition window (row k = day k) for the Horizons-Earth control test', rows, query: url };
 }
 
+// Geocentric Moon vectors (ICRF equatorial J2000, AU, AU/day) at TDB instants spread over several years,
+// including the Ceres opposition window. Same params as the Earth fixtures; used to validate src/astro/moon.ts.
+async function moonFixture(startUtc) {
+  const t0 = startUtc + TT_MINUS_UTC_DAYS;
+  const jds = [2451545.0, 2453000.5, 2455000.5, 2457000.5, 2459000.5, 2460500.5, t0, t0 + 7, t0 + 14, t0 + 21, t0 + 28, t0 + 40, 2462500.5];
+  const { url, lines } = await horizons({
+    COMMAND: `'301'`,
+    CENTER: `'500@399'`,
+    EPHEM_TYPE: 'VECTORS',
+    REF_PLANE: `'FRAME'`,
+    OUT_UNITS: `'AU-D'`,
+    VEC_TABLE: `'2'`,
+    CSV_FORMAT: `'YES'`,
+    TIME_TYPE: `'TDB'`,
+    TLIST: `'${jds.join(' ')}'`,
+  });
+  if (lines.length !== jds.length) throw new Error(`Horizons Moon: expected ${jds.length} rows, got ${lines.length}`);
+  const rows = lines.map((l) => {
+    const c = cols(l);
+    return {
+      jdTdb: num(c[0], 'jd'),
+      x: num(c[2], 'x'), y: num(c[3], 'y'), z: num(c[4], 'z'),
+      vx: num(c[5], 'vx'), vy: num(c[6], 'vy'), vz: num(c[7], 'vz'),
+    };
+  });
+  return { body: 'Moon', id: '301', center: '500@399', frame: 'ICRF equatorial J2000', units: 'AU, AU/day', timeScale: 'TDB', purpose: 'Geocentric Moon vectors for validating the Meeus ch.47 Moon model', rows, query: url };
+}
+
 async function main() {
+  if (process.argv.includes('--moon-only')) {
+    const f = await moonFixture(OPPOSITION_START[1]);
+    await writeJsonAtomic(resolve(ROOT, 'tests/fixtures/horizons/moon-geocentric.json'), f);
+    console.log('done');
+    return;
+  }
   if (process.argv.includes('--earth-window-only')) {
     const f = await earthWindowFixture(OPPOSITION_START[1]);
     await writeJsonAtomic(resolve(ROOT, 'tests/fixtures/horizons/earth-ceres-opposition.json'), f);
@@ -274,6 +308,8 @@ async function main() {
   fixtures.push(['earth.json', await earthFixture()]);
   console.log('Horizons earth daily vectors (Ceres opposition window)');
   fixtures.push(['earth-ceres-opposition.json', await earthWindowFixture(OPPOSITION_START[1])]);
+  console.log('Horizons moon geocentric vectors');
+  fixtures.push(['moon-geocentric.json', await moonFixture(OPPOSITION_START[1])]);
 
   // All fetches succeeded; only now write (each atomically).
   await writeJsonAtomic(resolve(ROOT, 'src/data/catalog.json'), catalog);

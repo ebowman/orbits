@@ -9,6 +9,7 @@ import { elementsToState, stateToElements } from '../state';
 import { jdUtcToTt } from '../time';
 import { dot, unit, scale } from '../vec';
 import { radecToUnit } from '../frames';
+import { CLOSE_APPROACH_CASES, closeApproach, trueElementsAt } from './closeApproachFixture';
 import type { Site } from '../observer';
 
 const SITE: Site = { latDeg: 19.8260847, lonEastDeg: 204.5278, elevM: 4210.24 };
@@ -271,4 +272,32 @@ describe('laplace IOD, 1 arcsec noise', () => {
       console.info(`${b.name}: laplace converged ${conv}/5`);
     });
   }
+});
+
+describe('laplace IOD, legitimate close approaches (Earth-coincident criterion)', () => {
+  for (const c of CLOSE_APPROACH_CASES) {
+    it(`solves by default: rho2 = ${c.rho2} AU at ${c.kms} km/s (${c.dir}, dt = ${c.spacing} d)`, () => {
+      const { obs, el, jdTt2 } = closeApproach(c);
+      const res = laplace(obs, { iterate: true });
+      const truth = trueElementsAt(el, jdTt2);
+      expect(Math.abs(res.elements.a - truth.a) / truth.a).toBeLessThan(1e-4);
+    });
+  }
+
+  it('still rejects the Eros +200 d spurious Earth-coincident root', () => {
+    const el = elementsOf('433');
+    const obs = synth(el, bestStart(el) + 200, null);
+    let res;
+    try {
+      res = laplace(obs, { iterate: true });
+    } catch (err) {
+      expect((err as Error).message).toMatch(/no physically valid solution/);
+      expect((err as Error).message).toMatch(/Earth-coincident/);
+      return;
+    }
+    // If a root survives it must be the true orbit, not the Earth-like a ~ 0.998 AU one.
+    const t = elementsToState(el, res.jdTt2);
+    const truth = stateToElements(t.r, t.v, res.jdTt2).elements;
+    expect(Math.abs(res.elements.a - truth.a) / truth.a).toBeLessThan(1e-6);
+  });
 });

@@ -9,10 +9,11 @@
 import { C_AU_PER_DAY, GM_SUN } from '../constants';
 import { radecToUnit } from '../frames';
 import { observerHeliocentric } from '../observer';
+import { earthHeliocentric } from '../planets';
 import { lagrangeFG } from '../propagate';
 import { stateToElements } from '../state';
 import { jdUtcToTt } from '../time';
-import { add, cross, dot, norm, scale, type Vec3 } from '../vec';
+import { add, cross, dot, norm, scale, sub, type Vec3 } from '../vec';
 import { solveDistancePolynomial } from './polynomial';
 import type { IODInput, IODResult, TraceStep } from './types';
 import { validateObservations } from './validate';
@@ -33,6 +34,12 @@ const MAX_TRACE_ITERATIONS = 20;
 const D0_MIN = 1e-8;
 const D0_WEAK = 1e-6;
 const RHO2_MIN = 1e-4;
+// Earth-coincident rejection. The spurious root is the Earth's own heliocentric orbit co-moving with the observer
+// (degenerate r2 ~ |R2| root): Eros +200 d converged to rho2 = 0.0155 AU with |v2 - V_earth| = 2.2e-4 AU/day
+// (0.38 km/s), a = 0.998 AU, e = 0.016, i = 0.235 deg. Real close approaches also have small rho2 but km/s relative
+// speeds, so a candidate is rejected only if BOTH rho2 < RHO2_EARTH AND |v2 - V_earth(t2)| < V_EARTH_REL.
+const RHO2_EARTH = 0.05;
+const V_EARTH_REL = 5e-4; // AU/day (~0.87 km/s)
 const ABS_FLOOR = 1e-15;
 const NOISE_FLOOR_REL = 1e-6;
 
@@ -317,12 +324,17 @@ export function gauss(obs: IODInput, opts: GaussOptions = {}): IODResult {
     return run;
   };
 
+  const earthRelSpeed = (r: { v2: Vec3; jdTt2: number }): number => norm(sub(r.v2, earthHeliocentric(r.jdTt2).v));
+
   // Fully iterate every candidate root.
   const runs = roots.map(runRoot);
   for (const run of runs) {
     if (run.reason === null) {
       if (!run.converged) run.reason = `did not converge in ${maxIter} iterations`;
       else if (!(run.rho[1] >= RHO2_MIN)) run.reason = `final rho2 = ${run.rho[1].toExponential(2)} AU is below ${RHO2_MIN} AU`;
+      else if (run.rho[1] < RHO2_EARTH && earthRelSpeed(run) < V_EARTH_REL) {
+        run.reason = `final rho2 = ${run.rho[1].toFixed(4)} AU is below ${RHO2_EARTH} AU and |v2 - V_earth| = ${earthRelSpeed(run).toExponential(2)} AU/day is below ${V_EARTH_REL} AU/day (Earth-coincident: the solution is the Earth's own orbit)`;
+      }
       else if (run.rho.some((x) => !(x >= 0))) {
         run.reason = `negative slant range (rho = ${run.rho.map((x) => x.toFixed(4)).join(', ')} AU)`;
       } else {

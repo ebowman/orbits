@@ -10,6 +10,8 @@ import { J2000_JD } from './constants';
 import { DEG2RAD, normalizeRad } from './angles';
 import type { OrbitalElements } from './elements';
 import { elementsToState, type StateVector } from './state';
+import { embMinusEarth } from './moon';
+import { sub } from './vec';
 
 export type PlanetName =
   | 'Mercury' | 'Venus' | 'EMBary' | 'Mars' | 'Jupiter' | 'Saturn' | 'Uranus' | 'Neptune';
@@ -60,9 +62,12 @@ export function planetHeliocentric(name: PlanetName, jdTt: number): StateVector 
 }
 
 /**
- * Earth heliocentric state taken as the Earth-Moon barycenter from the same table.
- * The Earth-EMB offset (~4670 km, ~3e-5 AU) is accepted as error.
+ * Earth-centre heliocentric state: the Standish EMB state minus the EMB-Earth offset
+ * (moonGeo / (1 + 81.30056907), ~4700 km ~3e-5 AU, from the truncated Meeus ch.47 Moon in moon.ts).
+ * Velocity uses a +-0.01 d central difference of the Moon position (see moon.ts).
  */
 export function earthHeliocentric(jdTt: number): StateVector {
-  return planetHeliocentric('EMBary', jdTt);
+  const emb = planetHeliocentric('EMBary', jdTt);
+  const off = embMinusEarth(jdTt);
+  return { r: sub(emb.r, off.r), v: sub(emb.v, off.v) };
 }
